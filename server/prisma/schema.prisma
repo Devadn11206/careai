@@ -1,0 +1,139 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+enum UserRole {
+  PATIENT
+  DOCTOR
+  ADMIN
+}
+
+enum DoctorStatus {
+  PENDING
+  VERIFIED
+  REJECTED
+}
+
+enum AppointmentStatus {
+  SCHEDULED
+  IN_PROGRESS
+  COMPLETED
+  CANCELLED
+  PENDING
+  REJECTED
+}
+
+enum ConsultationType {
+  VIDEO
+  IN_PERSON
+}
+
+model HealthMetric {
+  id          String @id @default(cuid())
+  patient     User   @relation("UserHealthMetrics", fields: [patientId], references: [id])
+  patientId   String
+  metricsJson String
+
+  createdAt DateTime @default(now())
+}
+
+model User {
+  id           String   @id @default(cuid())
+  name         String
+  email        String   @unique
+  passwordHash String
+  role         UserRole
+
+  // Optional doctor-specific metadata (used when role == DOCTOR)
+  specialization     String?
+  experienceYears    Int?
+  qualification      String?
+  registrationNumber String?
+  medicalCouncil     String?
+  rating             Float?        @default(4.8)
+  doctorStatus       DoctorStatus? @default(VERIFIED)
+
+  patientAppointments Appointment[] @relation("PatientAppointments")
+  doctorAppointments  Appointment[] @relation("DoctorAppointments")
+
+  // Additional relations
+  healthMetrics  HealthMetric[]   @relation("UserHealthMetrics")
+  doctorSchedule DoctorSchedule?  @relation("UserDoctorSchedule")
+  timeSlots      TimeSlot[]       @relation("UserTimeSlots")
+  sentMessages   ChatMessage[]    @relation("MessageSender")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model Appointment {
+  id              String            @id @default(cuid())
+  patient         User              @relation("PatientAppointments", fields: [patientId], references: [id])
+  patientId       String
+  doctor          User              @relation("DoctorAppointments", fields: [doctorId], references: [id])
+  doctorId        String
+  date            String
+  time            String
+  status          AppointmentStatus @default(SCHEDULED)
+  type            String
+  consultationType ConsultationType
+
+  // Optional linkage to a generated slot and OPD-style token
+  slotId     String?
+  tokenNumber Int?
+  symptoms    String?
+  notes       String?
+
+  chatMessages ChatMessage[] @relation("AppointmentMessages")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model DoctorSchedule {
+  id                String   @id @default(cuid())
+  doctor            User     @relation("UserDoctorSchedule", fields: [doctorId], references: [id])
+  doctorId          String   @unique
+  scheduleJson      String   // JSON-encoded DaySchedule[] from frontend
+  slotDuration      Int      // minutes
+  defaultMaxPatients Int
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model TimeSlot {
+  id         String @id
+  doctor     User   @relation("UserTimeSlots", fields: [doctorId], references: [id])
+  doctorId   String
+  date       String
+  startTime  String
+  endTime    String
+  maxPatients Int
+  bookedCount Int   @default(0)
+  isBlocked   Boolean @default(false)
+  isEmergency Boolean @default(false)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model ChatMessage {
+  id            String      @id @default(cuid())
+  appointment   Appointment @relation("AppointmentMessages", fields: [appointmentId], references: [id])
+  appointmentId String
+  sender        User        @relation("MessageSender", fields: [senderId], references: [id])
+  senderId      String
+  senderRole    UserRole
+  content       String
+  attachmentUrl String?
+  attachmentType String?
+  isRead        Boolean  @default(false)
+
+  createdAt DateTime @default(now())
+}

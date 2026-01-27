@@ -1,0 +1,9 @@
+{
+  "name": "CareXAI",
+  "description": "An Explainable AI–Based Healthcare Risk Monitoring and Doctor Recommendation Platform designed as a realistic clinical decision-support system.",
+  "requestFramePermissions": [
+    "camera",
+    "microphone",
+    "geolocation"
+  ]
+}
