@@ -1,16 +1,18 @@
 
-import React, { useState, useEffect } from 'react';
-import { DoctorProfile, PatientProfile, DaySchedule, Appointment, UserRole, DoctorAnalytics, TimeSlot, HealthPassportData, Medication, Document, HealthMetrics } from '../types';
+import React, { useMemo, useState, useEffect } from 'react';
+import { DoctorProfile, PatientProfile, DaySchedule, Appointment, UserRole, DoctorAnalytics, TimeSlot, HealthPassportData, Medication, MedicationFrequency, MedicationMissedDoseAlert, Document, HealthMetrics, PrescriptionOcrResult, PrescriptionMedicine, ChatEmergencyAlert } from '../types';
 import { MockBackend } from '../services/mockBackend';
 import { BackendAPI } from '../services/apiClient';
+import type { QueueUpdate } from '../services/apiClient';
+import { GeminiService } from '../services/geminiService';
 import { Button } from '../components/ui/Button';
 import { Card } from '../components/ui/Card';
 import { Input } from '../components/ui/Input';
 import { motion, AnimatePresence } from 'framer-motion';
 import { HealthPassport } from '../components/HealthPassport';
-import { BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, PieChart, Pie } from 'recharts';
+import { BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, PieChart, Pie, Brush, ReferenceLine } from 'recharts';
+import { ChatPanel } from '../components/telechat/ChatPanel';
 import { VideoCall } from '../components/VideoCall';
-import { ChatSystem } from '../components/ChatSystem';
 
 interface Props {
     user: DoctorProfile;
@@ -42,6 +44,14 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
     // Patient Specific Data (Real-time)
     const [patientHistory, setPatientHistory] = useState<HealthMetrics[]>([]);
     const [patientMeds, setPatientMeds] = useState<Medication[]>([]);
+    const [riskUpdateSummary, setRiskUpdateSummary] = useState<string | null>(null);
+    const [medSafetyAlert, setMedSafetyAlert] = useState<{
+        severity: 'LOW' | 'MEDIUM' | 'HIGH';
+        summary: string;
+        details: string;
+        pairs?: { label: string; note: string }[];
+        disclaimer?: string;
+    } | null>(null);
     const [patientDocs, setPatientDocs] = useState<Document[]>([]);
 
     const [manageDate, setManageDate] = useState(new Date().toISOString().split('T')[0]);
@@ -51,16 +61,161 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
 
     const [newMedName, setNewMedName] = useState('');
     const [newMedDosage, setNewMedDosage] = useState('');
-    const [newMedTime, setNewMedTime] = useState('Morning');
+    const [newMedFrequency, setNewMedFrequency] = useState<MedicationFrequency>('ONCE_DAILY');
+    const [newMedTimes, setNewMedTimes] = useState<string[]>(['08:00']);
+    const [newMedStartDate, setNewMedStartDate] = useState<string>(new Date().toISOString().slice(0, 10));
+    const [newMedDurationDays, setNewMedDurationDays] = useState<number>(7);
+    const [newMedInstructions, setNewMedInstructions] = useState<string>('');
     const [clinicalNote, setClinicalNote] = useState('');
 
-    const [activeVideoCall, setActiveVideoCall] = useState<Appointment | null>(null);
-    const [activeChatAppt, setActiveChatAppt] = useState<Appointment | null>(null);
+    const [medAlerts, setMedAlerts] = useState<MedicationMissedDoseAlert[]>([]);
 
     const [schedule, setSchedule] = useState<DaySchedule[]>(user.schedule || getDefaultSchedule());
     const [slotDuration, setSlotDuration] = useState<number>(user.slotDuration || 30);
     const [maxPatients, setMaxPatients] = useState<number>(user.defaultMaxPatients || 1);
     const [savingConfig, setSavingConfig] = useState(false);
+
+    const [ocrFile, setOcrFile] = useState<File | null>(null);
+    const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null);
+    const [ocrLoading, setOcrLoading] = useState(false);
+    const [ocrError, setOcrError] = useState<string | null>(null);
+    const [ocrResult, setOcrResult] = useState<PrescriptionOcrResult | null>(null);
+    const [ocrDraftMeds, setOcrDraftMeds] = useState<PrescriptionMedicine[]>([]);
+    const [ocrApproved, setOcrApproved] = useState(false);
+
+    const [emergencyAlerts, setEmergencyAlerts] = useState<ChatEmergencyAlert[]>([]);
+    const [queueByAppointmentId, setQueueByAppointmentId] = useState<Record<string, QueueUpdate>>({});
+    const [showTelechat, setShowTelechat] = useState(false);
+    const [telechatAppointmentId, setTelechatAppointmentId] = useState<string | null>(null);
+
+    const [showVideoCall, setShowVideoCall] = useState(false);
+    const [videoAppointment, setVideoAppointment] = useState<Appointment | null>(null);
+
+    type PatientTrendMetric = 'BP' | 'GLUCOSE' | 'BMI' | 'CHOLESTEROL';
+    const [patientTrendMetric, setPatientTrendMetric] = useState<PatientTrendMetric>('BP');
+    const [patientTrendRangeDays, setPatientTrendRangeDays] = useState<0 | 7 | 30 | 90>(30);
+    const [patientTrendShowAvg, setPatientTrendShowAvg] = useState(false);
+
+    const frequencyLabel = useMemo(() => {
+        return (f: MedicationFrequency) => {
+            switch (f) {
+                case 'ONCE_DAILY':
+                    return 'Once daily';
+                case 'TWICE_DAILY':
+                    return 'Twice daily';
+                case 'THRICE_DAILY':
+                    return 'Thrice daily';
+                case 'CUSTOM':
+                default:
+                    return 'Custom';
+            }
+        };
+    }, []);
+
+    const defaultTimesForFrequency = (freq: MedicationFrequency): string[] => {
+        switch (freq) {
+            case 'ONCE_DAILY':
+                return ['08:00'];
+            case 'TWICE_DAILY':
+                return ['08:00', '20:00'];
+            case 'THRICE_DAILY':
+                return ['08:00', '14:00', '20:00'];
+            case 'CUSTOM':
+            default:
+                return newMedTimes.length > 0 ? newMedTimes : ['08:00'];
+        }
+    };
+
+    useEffect(() => {
+        // Reset chart controls when switching patients
+        setPatientTrendMetric('BP');
+        setPatientTrendRangeDays(30);
+        setPatientTrendShowAvg(false);
+    }, [selectedPatient?.id]);
+
+    const parseMetricTimestamp = (ts: string): number | null => {
+        if (!ts) return null;
+        const d = new Date(ts);
+        const ms = d.getTime();
+        return Number.isFinite(ms) ? ms : null;
+    };
+
+    const formatMetricTimestamp = (ms: number): string => {
+        try {
+            return new Date(ms).toLocaleString(undefined, {
+                month: 'short',
+                day: '2-digit',
+                hour: '2-digit',
+                minute: '2-digit'
+            });
+        } catch {
+            return String(ms);
+        }
+    };
+
+    const clampRange = (min: number, value: number, max: number) => Math.max(min, Math.min(max, value));
+
+    const getTrendUnits = (metric: PatientTrendMetric): string => {
+        switch (metric) {
+            case 'BP':
+                return 'mmHg';
+            case 'GLUCOSE':
+                return 'mg/dL';
+            case 'BMI':
+                return 'kg/m²';
+            case 'CHOLESTEROL':
+                return 'mg/dL';
+            default:
+                return '';
+        }
+    };
+
+    const buildPatientTrendData = (): Array<HealthMetrics & { t: number; label: string; ma_systolicBP?: number; ma_diastolicBP?: number; ma_glucose?: number; ma_bmi?: number; ma_cholesterol?: number }> => {
+        const sorted = patientHistory
+            .slice()
+            .map((h, idx) => {
+                const ms = parseMetricTimestamp(h.timestamp);
+                const t = ms ?? idx;
+                return { ...h, t, label: ms ? formatMetricTimestamp(ms) : String(h.timestamp || idx) };
+            })
+            .sort((a, b) => a.t - b.t);
+
+        if (sorted.length === 0) return [];
+
+        const filtered = (() => {
+            if (patientTrendRangeDays === 0) return sorted;
+            const end = sorted[sorted.length - 1].t;
+            const startCutoff = end - patientTrendRangeDays * 24 * 60 * 60 * 1000;
+            const inRange = sorted.filter(r => r.t >= startCutoff);
+            return inRange.length >= 3 ? inRange : sorted.slice(-Math.min(10, sorted.length));
+        })();
+
+        if (!patientTrendShowAvg || filtered.length < 3) return filtered;
+
+        const windowSize = clampRange(3, Math.round(filtered.length / 5), 7);
+        const avg = (values: number[]) => values.reduce((s, v) => s + v, 0) / values.length;
+        const ma = (arr: number[], idx: number) => {
+            const start = Math.max(0, idx - windowSize + 1);
+            const slice = arr.slice(start, idx + 1).filter(v => Number.isFinite(v));
+            if (slice.length === 0) return undefined;
+            return Number(avg(slice).toFixed(1));
+        };
+
+        const sys = filtered.map(r => r.systolicBP);
+        const dia = filtered.map(r => r.diastolicBP);
+        const glu = filtered.map(r => r.glucose);
+        const bmi = filtered.map(r => r.bmi);
+        const chol = filtered.map(r => r.cholesterol);
+
+        return filtered.map((row, idx) => ({
+            ...row,
+            ma_systolicBP: ma(sys, idx),
+            ma_diastolicBP: ma(dia, idx),
+            ma_glucose: ma(glu, idx),
+            ma_bmi: ma(bmi, idx),
+            ma_cholesterol: ma(chol, idx),
+        }));
+    };
 
     // --- HASH NAVIGATION SYNC ---
     useEffect(() => {
@@ -98,6 +253,15 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                 setAppointments([]);
                 setAnalytics(null);
                 return;
+            }
+
+            try {
+                const alerts = await BackendAPI.getDoctorMedicationAlerts().catch(() => (
+                    MockBackend.getDoctorMedicationAlerts(effectiveUser.id)
+                ));
+                setMedAlerts(alerts);
+            } catch {
+                // ignore
             }
 
             const [assignedPatients, appts, stats] = await Promise.all([
@@ -146,7 +310,9 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
 
                 const [hist, meds, docs] = await Promise.all([
                     BackendAPI.getMyMetrics(selectedPatient.id),
-                    MockBackend.getMedications(selectedPatient.id),
+                    BackendAPI.getMedicationOrders({ patientId: selectedPatient.id, active: 'true' }).catch(() => (
+                        MockBackend.getMedications(selectedPatient.id)
+                    )),
                     MockBackend.getPatientDocuments(selectedPatient.id)
                 ]);
                 setPatientHistory(hist);
@@ -172,6 +338,16 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
 
         const unsubscribeAppt = BackendAPI.onAppointmentCreated(upsertAppointment);
 
+        const unsubscribeQueue = BackendAPI.onQueueUpdate((payload) => {
+            if (payload.doctorId !== user.id) return;
+            setQueueByAppointmentId((prev) => ({ ...prev, [payload.appointmentId]: payload }));
+        });
+
+        const unsubscribeEmergency = BackendAPI.onChatEmergency((alert) => {
+            if (alert.doctorId !== user.id) return;
+            setEmergencyAlerts((prev) => [alert, ...prev].slice(0, 5));
+        });
+
         const unsubscribeSlot = BackendAPI.onSlotUpdated((slot) => {
             if (slot.date !== manageDate) return;
             setDailySlots((prev) => {
@@ -185,17 +361,152 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
             });
         });
 
-        const unsubscribeApptUpdated = BackendAPI.getSocket()
-            ? BackendAPI.getSocket()!.on('appointment:updated', upsertAppointment)
-            : () => { };
+        const unsubscribeApptUpdated = BackendAPI.onAppointmentUpdated(upsertAppointment);
 
         return () => {
             unsubscribeMock();
             unsubscribeAppt();
+            unsubscribeQueue();
             unsubscribeSlot();
-            if (typeof unsubscribeApptUpdated === 'function') (unsubscribeApptUpdated as any)();
+            unsubscribeEmergency();
+            unsubscribeApptUpdated();
         };
     }, [user.id, user.status, viewMode, manageDate, selectedPatient?.id]);
+
+    // --- DERIVED CLINICAL SUMMARIES ---
+
+    const buildDoctorRiskUpdate = (history: HealthMetrics[]): string | null => {
+        if (!history || history.length === 0) return null;
+        const latest = history[history.length - 1];
+        const prev = history.length > 1 ? history[history.length - 2] : null;
+
+        const bpStr = (latest.systolicBP && latest.diastolicBP)
+            ? `${latest.systolicBP}/${latest.diastolicBP} mmHg`
+            : null;
+        const glucoseStr = latest.glucose ? `${latest.glucose} mg/dL` : null;
+        const cholStr = latest.cholesterol ? `${latest.cholesterol} mg/dL` : null;
+        const bmiStr = latest.bmi ? `${latest.bmi}` : null;
+
+        const vitalsParts: string[] = [];
+        if (bpStr) vitalsParts.push(`BP ${bpStr}`);
+        if (glucoseStr) vitalsParts.push(`glucose ${glucoseStr}`);
+        if (cholStr) vitalsParts.push(`cholesterol ${cholStr}`);
+        if (bmiStr) vitalsParts.push(`BMI ${bmiStr}`);
+
+        const vitalsSentence = vitalsParts.length
+            ? `Latest vitals: ${vitalsParts.join(', ')}.`
+            : '';
+
+        let trendSentence = '';
+        if (prev && latest.systolicBP && prev.systolicBP) {
+            const diff = latest.systolicBP - prev.systolicBP;
+            if (Math.abs(diff) >= 5) {
+                trendSentence = diff > 0
+                    ? 'Systolic BP is slightly higher than the previous reading.'
+                    : 'Systolic BP is slightly lower than the previous reading.';
+            } else {
+                trendSentence = 'Blood pressure is broadly similar to the previous reading.';
+            }
+        }
+
+        const categorize = (score?: number): string | null => {
+            if (score === undefined || score === null) return null;
+            if (score < 30) return 'Low';
+            if (score < 70) return 'Moderate';
+            return 'High';
+        };
+
+        const riskBits: string[] = [];
+        const dmCat = categorize(latest.diabetesRisk);
+        const htCat = categorize(latest.hypertensionRisk);
+        const hdCat = categorize(latest.heartDiseaseRisk);
+        if (dmCat && typeof latest.diabetesRisk === 'number') {
+            riskBits.push(`Diabetes – ${dmCat} (${Math.round(latest.diabetesRisk)}%)`);
+        }
+        if (htCat && typeof latest.hypertensionRisk === 'number') {
+            riskBits.push(`Hypertension – ${htCat} (${Math.round(latest.hypertensionRisk)}%)`);
+        }
+        if (hdCat && typeof latest.heartDiseaseRisk === 'number') {
+            riskBits.push(`Heart disease – ${hdCat} (${Math.round(latest.heartDiseaseRisk)}%)`);
+        }
+
+        const riskSentence = riskBits.length
+            ? `Current risk scores: ${riskBits.join('; ')}.`
+            : '';
+
+        const pieces = [vitalsSentence, trendSentence, riskSentence].filter(Boolean);
+        if (!pieces.length) return null;
+        return pieces.join(' ');
+    };
+
+    const buildMedicationSafetyAlert = (meds: Medication[]) => {
+        if (!meds || meds.length === 0) return null;
+
+        // Base polypharmacy signal
+        let severity: 'LOW' | 'MEDIUM' | 'HIGH' = 'LOW';
+        if (meds.length >= 4 && meds.length <= 5) severity = 'MEDIUM';
+        if (meds.length > 5) severity = 'HIGH';
+
+        const summary = meds.length <= 1
+            ? 'Only one active medicine recorded; major drug–drug interactions from this list alone are less likely.'
+            : `This patient currently has ${meds.length} active medicines.`;
+        const details = 'Multiple concurrent medicines can increase the chance of drug–drug interactions and side effects. Please cross-check this regimen using your usual interaction checker or institutional guidelines before adding new prescriptions or changing doses.';
+
+        return { severity, summary, details };
+    };
+
+    useEffect(() => {
+        if (patientHistory && patientHistory.length > 0 && selectedPatient) {
+            setRiskUpdateSummary(buildDoctorRiskUpdate(patientHistory));
+        } else {
+            setRiskUpdateSummary(null);
+        }
+    }, [patientHistory, selectedPatient?.id]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const run = async () => {
+            if (!patientMeds || patientMeds.length === 0 || !selectedPatient) {
+                setMedSafetyAlert(null);
+                return;
+            }
+
+            // Start from a deterministic polypharmacy summary
+            const base = buildMedicationSafetyAlert(patientMeds);
+            setMedSafetyAlert(base);
+
+            try {
+                const ai = await GeminiService.analyzeDrugInteractions(patientMeds);
+                if (cancelled) return;
+
+                const mappedSeverity: 'LOW' | 'MEDIUM' | 'HIGH' = ai.severity === 'HIGH'
+                    ? 'HIGH'
+                    : ai.severity === 'MODERATE'
+                        ? 'MEDIUM'
+                        : 'LOW';
+
+                const pairs = (ai.pairs || []).map(p => ({
+                    label: `${p.drugA} + ${p.drugB} (${p.severity} risk)`,
+                    note: p.note || p.risk,
+                }));
+
+                setMedSafetyAlert({
+                    severity: mappedSeverity,
+                    summary: ai.summary || base?.summary || '',
+                    details: base?.details || '',
+                    pairs,
+                    disclaimer: ai.disclaimer,
+                });
+            } catch {
+                // On any AI error, keep the base alert only
+                if (!cancelled) setMedSafetyAlert(base);
+            }
+        };
+
+        run();
+        return () => { cancelled = true; };
+    }, [patientMeds, selectedPatient?.id]);
 
     // --- ACTIONS ---
 
@@ -240,12 +551,72 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
 
     const handleAddMedication = async () => {
         if (!selectedPatient || !newMedName || !newMedDosage) return;
-        await MockBackend.addMedication(selectedPatient.id, newMedName, newMedDosage, newMedTime);
-        setNewMedName(''); setNewMedDosage(''); setNewMedTime('Morning');
+        const safeDuration = Number.isFinite(newMedDurationDays) ? Math.max(1, Math.round(newMedDurationDays)) : 7;
+        await BackendAPI.createMedicationOrder({
+            patientId: selectedPatient.id,
+            name: newMedName,
+            dosage: newMedDosage,
+            frequency: newMedFrequency,
+            times: (newMedTimes && newMedTimes.length > 0) ? newMedTimes : defaultTimesForFrequency(newMedFrequency),
+            startDate: newMedStartDate,
+            durationDays: safeDuration,
+            instructions: newMedInstructions.trim() || undefined,
+        }).catch(() => (
+            MockBackend.assignMedicationOrder({
+                patientId: selectedPatient.id,
+                doctorId: user.id,
+                name: newMedName,
+                dosage: newMedDosage,
+                frequency: newMedFrequency,
+                times: (newMedTimes && newMedTimes.length > 0) ? newMedTimes : defaultTimesForFrequency(newMedFrequency),
+                startDate: newMedStartDate,
+                durationDays: safeDuration,
+                instructions: newMedInstructions.trim() || undefined,
+            })
+        ));
+
+        const updatedMeds = await BackendAPI.getMedicationOrders({ patientId: selectedPatient.id, active: 'true' }).catch(() => (
+            MockBackend.getMedications(selectedPatient.id)
+        ));
+        setPatientMeds(updatedMeds);
+
+        const alerts = await BackendAPI.getDoctorMedicationAlerts().catch(() => (
+            MockBackend.getDoctorMedicationAlerts(user.id)
+        ));
+        setMedAlerts(alerts);
+
+        setNewMedName('');
+        setNewMedDosage('');
+        setNewMedFrequency('ONCE_DAILY');
+        setNewMedTimes(['08:00']);
+        setNewMedStartDate(new Date().toISOString().slice(0, 10));
+        setNewMedDurationDays(7);
+        setNewMedInstructions('');
+    };
+
+    const handleAcknowledgeMedAlert = async (alertId: string) => {
+        await BackendAPI.acknowledgeDoctorMedicationAlert(alertId).catch(() => (
+            MockBackend.acknowledgeDoctorMedicationAlert(user.id, alertId)
+        ));
+        const alerts = await BackendAPI.getDoctorMedicationAlerts().catch(() => (
+            MockBackend.getDoctorMedicationAlerts(user.id)
+        ));
+        setMedAlerts(alerts);
     };
 
     const handleDeleteMedication = async (medId: string) => {
-        if (confirm("Remove this medication?")) await MockBackend.deleteMedication(medId);
+        if (!confirm("Remove this medication?")) return;
+
+        await BackendAPI.deleteMedicationOrder(medId).catch(() => (
+            MockBackend.deleteMedication(medId)
+        ));
+
+        if (selectedPatient) {
+            const updatedMeds = await BackendAPI.getMedicationOrders({ patientId: selectedPatient.id, active: 'true' }).catch(() => (
+                MockBackend.getMedications(selectedPatient.id)
+            ));
+            setPatientMeds(updatedMeds);
+        }
     };
 
     const handleSaveNote = async () => {
@@ -283,32 +654,138 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
         }
     };
 
+    const fileToBase64 = (file: File): Promise<string> => {
+        return new Promise((resolve, reject) => {
+            const reader = new FileReader();
+            reader.onload = () => {
+                const result = reader.result as string;
+                const base64 = result.split(',')[1] || '';
+                resolve(base64);
+            };
+            reader.onerror = () => reject(reader.error || new Error('Failed to read file'));
+            reader.readAsDataURL(file);
+        });
+    };
+
+    const handleOcrFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+        if (!e.target.files || e.target.files.length === 0) return;
+        const file = e.target.files[0];
+        if (!file.type.startsWith('image/')) {
+            setOcrError('Please upload an image file (JPG, PNG).');
+            return;
+        }
+        setOcrError(null);
+        setOcrFile(file);
+        if (ocrPreviewUrl) URL.revokeObjectURL(ocrPreviewUrl);
+        setOcrPreviewUrl(URL.createObjectURL(file));
+        setOcrResult(null);
+        setOcrDraftMeds([]);
+        setOcrApproved(false);
+    };
+
+    const handleRunPrescriptionOcr = async () => {
+        if (!selectedPatient) {
+            setOcrError('Select a patient before running OCR.');
+            return;
+        }
+        if (!ocrFile) {
+            setOcrError('Please choose a prescription image first.');
+            return;
+        }
+        try {
+            setOcrLoading(true);
+            setOcrError(null);
+            const base64 = await fileToBase64(ocrFile);
+            const result = await GeminiService.analyzePrescriptionFromBase64(base64, ocrFile.type);
+            setOcrResult(result);
+            setOcrDraftMeds(result.medicines || []);
+            setOcrApproved(false);
+        } catch (err) {
+            console.error(err);
+            setOcrError('Failed to analyze prescription. Check your AI configuration and try again.');
+        } finally {
+            setOcrLoading(false);
+        }
+    };
+
+    const handleUpdateOcrMedField = (index: number, field: keyof PrescriptionMedicine, value: string) => {
+        setOcrDraftMeds(prev => prev.map((m, i) => (i === index ? { ...m, [field]: value } : m)));
+    };
+
+    const handleApproveOcrMedicines = async () => {
+        if (!selectedPatient || ocrDraftMeds.length === 0) return;
+        try {
+            setOcrLoading(true);
+            for (const med of ocrDraftMeds) {
+                if (!med.name) continue;
+                const rawFreq = (med.frequency || '').toLowerCase();
+                const inferredTime = rawFreq.includes('night') || rawFreq.includes('evening')
+                    ? '20:00'
+                    : rawFreq.includes('noon') || rawFreq.includes('afternoon')
+                        ? '14:00'
+                        : '08:00';
+
+                await BackendAPI.createMedicationOrder({
+                    patientId: selectedPatient.id,
+                    name: med.name,
+                    dosage: med.dosage || med.frequency || '',
+                    frequency: 'CUSTOM',
+                    times: [inferredTime],
+                    startDate: new Date().toISOString().slice(0, 10),
+                    durationDays: 14,
+                    instructions: med.notes || undefined,
+                }).catch(() => (
+                    MockBackend.addMedication(selectedPatient.id, med.name, med.dosage || med.frequency || '', med.frequency || 'Morning')
+                ));
+            }
+            const updatedMeds = await BackendAPI.getMedicationOrders({ patientId: selectedPatient.id, active: 'true' }).catch(() => (
+                MockBackend.getMedications(selectedPatient.id)
+            ));
+            setPatientMeds(updatedMeds);
+            setOcrApproved(true);
+        } catch (err) {
+            console.error(err);
+            setOcrError('Failed to approve extracted medicines.');
+        } finally {
+            setOcrLoading(false);
+        }
+    };
+
     // --- RENDERERS ---
 
     const renderDashboard = () => {
         const todayStr = new Date().toLocaleDateString('en-CA');
         const todaysAppts = appointments
-            .filter(a => a.date === todayStr && a.status === 'SCHEDULED')
-            .sort((a, b) => a.time.localeCompare(b.time));
+            .filter(a => a.date === todayStr && a.status !== 'CANCELLED' && a.status !== 'REJECTED' && a.status !== 'COMPLETED')
+            .slice()
+            .sort((a, b) => {
+                const t = a.time.localeCompare(b.time);
+                if (t !== 0) return t;
+                return (a.tokenNumber || 0) - (b.tokenNumber || 0);
+            });
+
+        const activeQueue = todaysAppts;
+
+        const activeQueueIndexById = new Map(activeQueue.map((a, idx) => [a.id, idx] as const));
+        const getAhead = (appointmentId: string): number => {
+            return queueByAppointmentId[appointmentId]?.ahead ?? activeQueueIndexById.get(appointmentId) ?? 0;
+        };
+        const getDelayMinutes = (appointmentId: string): number => {
+            return queueByAppointmentId[appointmentId]?.delayMinutes ?? (getAhead(appointmentId) * (slotDuration || 30));
+        };
 
         // Determine next patient
-        const now = new Date();
-        const nextAppt = todaysAppts.find(a => {
-            const [h, m] = a.time.split(':').map(Number);
-            const apptTime = new Date();
-            apptTime.setHours(h, m, 0);
-            return apptTime > now || (apptTime.getTime() + 30 * 60000) > now.getTime();
-        });
+        const nextAppt = activeQueue.find(a => a.status === 'IN_PROGRESS') || activeQueue[0];
 
         return (
+            <>
             <div className="space-y-8">
                 {/* Header Stats */}
-                <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {[
                         { icon: '📅', label: "Today's Appts", value: todaysAppts.length, color: 'rose' },
                         { icon: '👥', label: "Total Patients", value: analytics?.totalPatients || 0, color: 'blue' },
                         { icon: '⏳', label: "Pending", value: appointments.filter(a => a.status === 'PENDING').length, color: 'orange' },
-                        { icon: '⭐', label: "Rating", value: analytics?.averageRating || 4.5, color: 'emerald' }
                     ].map((stat, i) => (
                         <div key={i} className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm flex items-center gap-4 hover:shadow-md transition-shadow">
                             <div className={`w-12 h-12 rounded-full flex items-center justify-center text-xl bg-${stat.color}-50 dark:bg-${stat.color}-900/30 text-${stat.color}-600 dark:text-${stat.color}-400`}>
@@ -322,10 +799,10 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                     ))}
                 </div>
 
-                <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
                     {/* LEFT: Live Queue / Next Patient */}
                     <div className="lg:col-span-2 space-y-6">
-                        <div className="flex justify-between items-center">
+                        <div className="flex items-center justify-between">
                             <h3 className="text-xl font-bold text-slate-800 dark:text-white">Live Queue</h3>
                             <span className="bg-green-100 text-green-700 px-3 py-1 rounded-full text-xs font-bold animate-pulse">● Live</span>
                         </div>
@@ -343,6 +820,9 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                                 <span className="w-1 h-1 bg-white/50 rounded-full"></span>
                                                 {nextAppt.symptoms || 'Routine Checkup'}
                                             </p>
+                                            <p className="text-indigo-100/90 text-xs mt-2 font-semibold">
+                                                Queue: {getAhead(nextAppt.id)} ahead • ~{getDelayMinutes(nextAppt.id)} min delay
+                                            </p>
                                         </div>
                                         <div className="bg-white/10 backdrop-blur-md px-5 py-3 rounded-2xl text-center border border-white/20 shadow-lg">
                                             <p className="text-xs font-bold uppercase opacity-80">Token</p>
@@ -350,12 +830,7 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                         </div>
                                     </div>
 
-                                    <div className="flex flex-wrap gap-4">
-                                        {nextAppt.consultationType === 'VIDEO' && (
-                                            <Button onClick={() => setActiveVideoCall(nextAppt)} className="bg-white text-indigo-700 hover:bg-indigo-50 border-none shadow-xl px-8 py-3 text-sm rounded-xl">
-                                                Start Video Call
-                                            </Button>
-                                        )}
+                                        <div className="flex flex-wrap gap-4">
                                         {nextAppt.status !== 'IN_PROGRESS' && nextAppt.status !== 'COMPLETED' && (
                                             <Button
                                                 variant="outline"
@@ -366,22 +841,45 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                             </Button>
                                         )}
                                         {nextAppt.status === 'IN_PROGRESS' && (
-                                            <Button
-                                                variant="outline"
-                                                className="text-emerald-100 border-emerald-200/60 hover:bg-emerald-500/20 rounded-xl"
-                                                onClick={() => BackendAPI.updateAppointmentStatus({ appointmentId: nextAppt.id, status: 'COMPLETED' })}
-                                            >
-                                                Mark as Completed
-                                            </Button>
+                                            <>
+                                                <Button
+                                                    variant="outline"
+                                                    className="text-emerald-100 border-emerald-200/60 hover:bg-emerald-500/20 rounded-xl"
+                                                    onClick={() => BackendAPI.updateAppointmentStatus({ appointmentId: nextAppt.id, status: 'COMPLETED' })}
+                                                >
+                                                    Mark as Completed
+                                                </Button>
+                                                {nextAppt.consultationType === 'VIDEO' && (
+                                                    <Button
+                                                        variant="outline"
+                                                        className="w-full justify-center"
+                                                        onClick={() => {
+                                                            setTelechatAppointmentId(nextAppt.id);
+                                                            setShowTelechat(true);
+                                                        }}
+                                                    >
+                                                        Secure Chat
+                                                    </Button>
+                                                )}
+                                                {nextAppt.consultationType === 'VIDEO' && (
+                                                    <Button
+                                                        variant="outline"
+                                                        className="w-full justify-center"
+                                                        onClick={() => {
+                                                            setVideoAppointment(nextAppt);
+                                                            setShowVideoCall(true);
+                                                        }}
+                                                    >
+                                                        Join Video Call
+                                                    </Button>
+                                                )}
+                                            </>
                                         )}
                                         <Button variant="outline" className="text-white border-white/30 hover:bg-white/10 rounded-xl" onClick={() => {
                                             const p = patients.find(pat => pat.id === nextAppt.patientId);
                                             if (p) { setSelectedPatient(p); setViewMode('patients'); }
                                         }}>
                                             View Patient File
-                                        </Button>
-                                        <Button variant="outline" className="text-white border-white/30 hover:bg-white/10 rounded-xl" onClick={() => setActiveChatAppt(nextAppt)}>
-                                            Message
                                         </Button>
                                     </div>
                                 </div>
@@ -400,13 +898,15 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                             </div>
                             <div className="max-h-[300px] overflow-y-auto custom-scrollbar">
                                 {todaysAppts.length === 0 && <p className="p-8 text-center text-slate-400 italic">No appointments today.</p>}
-                                {todaysAppts.map(appt => (
+                                {todaysAppts.map((appt, idx) => (
                                     <div key={appt.id} className="p-4 flex items-center hover:bg-slate-50 dark:hover:bg-slate-700/50 transition-colors border-b border-slate-50 dark:border-slate-800 last:border-0">
                                         <div className="w-20 text-sm font-bold text-slate-500 dark:text-slate-400 font-mono">{appt.time}</div>
                                         <div className="flex-1">
                                             <p className="font-bold text-slate-800 dark:text-white">{appt.patientName}</p>
                                             <p className="text-xs text-slate-500 flex items-center gap-2">
                                                 <span>{appt.type}</span>
+                                                <span className="text-slate-300">•</span>
+                                                <span className="font-mono">#{appt.tokenNumber || (idx + 1)}</span>
                                                 {appt.notes && (
                                                     <span className="inline-flex items-center text-[10px] font-semibold px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 border border-amber-100" title="Clinical notes saved">
                                                         📝 Notes
@@ -419,14 +919,9 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                                 <span className="text-xs font-bold text-emerald-600 bg-emerald-50 px-2 py-1 rounded">Done</span>
                                             ) : (
                                                 <>
-                                                    {appt.consultationType === 'VIDEO' && (
-                                                        <button onClick={() => setActiveVideoCall(appt)} className="p-2 bg-indigo-50 text-indigo-600 rounded-lg hover:bg-indigo-100 transition-colors" title="Start Video">
-                                                            📹
-                                                        </button>
-                                                    )}
-                                                    <button onClick={() => setActiveChatAppt(appt)} className="p-2 bg-blue-50 text-blue-600 rounded-lg hover:bg-blue-100 transition-colors" title="Chat">
-                                                        💬
-                                                    </button>
+                                                    <span className="hidden sm:inline-flex text-[10px] font-bold text-slate-600 dark:text-slate-300 bg-slate-100 dark:bg-slate-700/40 px-2 py-1 rounded border border-slate-200/60 dark:border-slate-700">
+                                                        Ahead {getAhead(appt.id)} • {getDelayMinutes(appt.id)}m
+                                                    </span>
                                                     {appt.status !== 'IN_PROGRESS' && (
                                                         <button
                                                             onClick={() => BackendAPI.updateAppointmentStatus({ appointmentId: appt.id, status: 'IN_PROGRESS' })}
@@ -436,12 +931,36 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                                         </button>
                                                     )}
                                                     {appt.status === 'IN_PROGRESS' && (
-                                                        <button
-                                                            onClick={() => BackendAPI.updateAppointmentStatus({ appointmentId: appt.id, status: 'COMPLETED' })}
-                                                            className="px-2 py-1 text-[10px] font-bold rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-100"
-                                                        >
-                                                            Complete
-                                                        </button>
+                                                        <>
+                                                            <button
+                                                                onClick={() => BackendAPI.updateAppointmentStatus({ appointmentId: appt.id, status: 'COMPLETED' })}
+                                                                className="px-2 py-1 text-[10px] font-bold rounded bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-100"
+                                                            >
+                                                                Complete
+                                                            </button>
+                                                            {appt.consultationType === 'VIDEO' && (
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setTelechatAppointmentId(appt.id);
+                                                                        setShowTelechat(true);
+                                                                    }}
+                                                                    className="px-2 py-1 text-[10px] font-bold rounded bg-indigo-50 text-indigo-700 hover:bg-indigo-100 border border-indigo-100"
+                                                                >
+                                                                    Chat
+                                                                </button>
+                                                            )}
+                                                            {appt.consultationType === 'VIDEO' && (
+                                                                <button
+                                                                    onClick={() => {
+                                                                        setVideoAppointment(appt);
+                                                                        setShowVideoCall(true);
+                                                                    }}
+                                                                    className="px-2 py-1 text-[10px] font-bold rounded bg-purple-50 text-purple-700 hover:bg-purple-100 border border-purple-100"
+                                                                >
+                                                                    Video
+                                                                </button>
+                                                            )}
+                                                        </>
                                                     )}
                                                     <Button size="sm" variant="ghost" className="h-8 text-xs px-3" onClick={() => {
                                                         const p = patients.find(pat => pat.id === appt.patientId);
@@ -485,6 +1004,25 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                     </div>
                 </div>
             </div>
+            {showTelechat && telechatAppointmentId && (
+                <ChatPanel
+                    currentUser={{ id: user.id, name: user.name }}
+                    appointmentId={telechatAppointmentId}
+                    onClose={() => setShowTelechat(false)}
+                />
+            )}
+
+            {showVideoCall && videoAppointment && (
+                <VideoCall
+                    appointmentId={videoAppointment.id}
+                    otherUserName={videoAppointment.patientName}
+                    onClose={() => {
+                        setShowVideoCall(false);
+                        setVideoAppointment(null);
+                    }}
+                />
+            )}
+            </>
         );
     };
 
@@ -508,7 +1046,7 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                 </div>
 
                 {/* KPI Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                     <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm relative overflow-hidden">
                         <div className="relative z-10">
                             <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-2">Total Patients</p>
@@ -519,21 +1057,6 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                         </div>
                         <div className="absolute -bottom-4 -right-4 text-slate-50 dark:text-slate-800/50">
                             <svg className="w-24 h-24" fill="currentColor" viewBox="0 0 24 24"><path d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z" /></svg>
-                        </div>
-                    </div>
-
-                    <div className="bg-white dark:bg-slate-800 p-6 rounded-2xl border border-slate-100 dark:border-slate-700 shadow-sm relative overflow-hidden">
-                        <div className="relative z-10">
-                            <p className="text-slate-500 text-xs font-bold uppercase tracking-wider mb-2">Patient Rating</p>
-                            <h3 className="text-3xl font-black text-slate-800 dark:text-white">{analytics.averageRating} <span className="text-lg text-slate-400">/ 5.0</span></h3>
-                            <div className="flex mt-2">
-                                {[1, 2, 3, 4, 5].map(s => (
-                                    <span key={s} className={`text-sm ${s <= Math.round(analytics.averageRating) ? 'text-yellow-400' : 'text-slate-200'}`}>★</span>
-                                ))}
-                            </div>
-                        </div>
-                        <div className="absolute -bottom-4 -right-4 text-slate-50 dark:text-slate-800/50">
-                            <svg className="w-24 h-24" fill="currentColor" viewBox="0 0 24 24"><path d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" /></svg>
                         </div>
                     </div>
 
@@ -709,11 +1232,9 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                                     <span className="text-slate-400 mx-2">•</span>
                                                     <span className="text-slate-500">{a.type}</span>
                                                 </div>
-                                                <div className="flex gap-2">
-                                                    {a.consultationType === 'VIDEO' && (
-                                                        <button onClick={() => setActiveVideoCall(a)} className="text-indigo-600 hover:text-indigo-800 font-bold text-xs">Video</button>
-                                                    )}
-                                                    <button onClick={() => setActiveChatAppt(a)} className="text-blue-600 hover:text-blue-800 font-bold text-xs">Chat</button>
+                                                <div className="flex gap-2 text-xs text-slate-500">
+                                                    {/* Communication (chat/video) disabled for this slot view */}
+                                                    <span>{a.consultationType}</span>
                                                 </div>
                                             </div>
                                         ))}
@@ -839,19 +1360,6 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                         <Button variant="outline" onClick={() => handleViewPassport(selectedPatient.id)}>
                             View Health Passport
                         </Button>
-                        <Button
-                            onClick={() => {
-                                const patientAppts = appointments.filter(a => a.patientId === selectedPatient.id);
-                                if (patientAppts.length === 0) {
-                                    alert('No scheduled appointments with this patient yet. Start a visit to enable chat.');
-                                    return;
-                                }
-                                const latestAppt = patientAppts[patientAppts.length - 1];
-                                setActiveChatAppt(latestAppt);
-                            }}
-                        >
-                            Message Patient
-                        </Button>
                     </div>
                 </div>
 
@@ -903,12 +1411,51 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                                 <p className="text-[10px] text-slate-400 mt-1">Last Screen: {new Date(selectedPatient.symptomRiskProfile.lastScreeningDate).toLocaleDateString()}</p>
                                             </div>
                                         )}
+                                        {riskUpdateSummary && (
+                                            <div className="mt-4 border-t border-slate-100 dark:border-slate-700 pt-4">
+                                                <h4 className="text-sm font-bold text-slate-700 dark:text-slate-200 mb-1">Clinical Risk Update</h4>
+                                                <p className="text-xs text-slate-600 dark:text-slate-300 leading-snug">
+                                                    {riskUpdateSummary}
+                                                </p>
+                                                <p className="text-[10px] text-slate-400 mt-1">
+                                                    Generated from latest recorded vitals and stored risk scores. Always interpret in full clinical context.
+                                                </p>
+                                            </div>
+                                        )}
                                     </div>
                                 ) : <p className="text-slate-400 italic">No vitals history recorded.</p>}
                             </Card>
 
                             <Card title="Active Medications">
                                 {patientMeds.length === 0 && <p className="text-slate-400 italic">No active medications.</p>}
+                                {medSafetyAlert && (
+                                    <div className={`mb-3 rounded-xl border px-3 py-2 text-[11px] leading-snug ${
+                                        medSafetyAlert.severity === 'HIGH'
+                                            ? 'bg-red-50 border-red-200 text-red-800'
+                                            : medSafetyAlert.severity === 'MEDIUM'
+                                                ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                                : 'bg-blue-50 border-blue-200 text-blue-800'
+                                    }`}>
+                                        <div className="flex items-center justify-between mb-1">
+                                            <span className="font-bold uppercase tracking-wide">Medication Safety Alert</span>
+                                            <span className="text-[9px] font-semibold opacity-80">{medSafetyAlert.severity} PRIORITY</span>
+                                        </div>
+                                        <p>{medSafetyAlert.summary}</p>
+                                        <p className="mt-1 opacity-90">{medSafetyAlert.details}</p>
+                                        {medSafetyAlert.pairs && medSafetyAlert.pairs.length > 0 && (
+                                            <ul className="mt-2 space-y-1 list-disc list-inside">
+                                                {medSafetyAlert.pairs.map((p, idx) => (
+                                                    <li key={idx}>
+                                                        <span className="font-semibold">{p.label}:</span> {p.note}
+                                                    </li>
+                                                ))}
+                                            </ul>
+                                        )}
+                                        {medSafetyAlert.disclaimer && (
+                                            <p className="mt-2 text-[10px] opacity-80">{medSafetyAlert.disclaimer}</p>
+                                        )}
+                                    </div>
+                                )}
                                 <div className="space-y-2">
                                     {patientMeds.map(m => (
                                         <div key={m.id} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-700">
@@ -924,56 +1471,465 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                     )}
 
                     {patientTab === 'HISTORY' && (
-                        <Card title="Vitals History" className="mt-6">
-                            <div className="h-80 w-full">
-                                <ResponsiveContainer width="100%" height="100%">
-                                    <LineChart data={patientHistory}>
-                                        <CartesianGrid strokeDasharray="3 3" vertical={false} />
-                                        <XAxis dataKey="timestamp" hide />
-                                        <YAxis />
-                                        <Tooltip />
-                                        <Legend />
-                                        <Line type="monotone" dataKey="systolicBP" stroke="#ef4444" name="Sys BP" strokeWidth={2} dot={{ r: 4 }} />
-                                        <Line type="monotone" dataKey="glucose" stroke="#10b981" name="Glucose" strokeWidth={2} dot={{ r: 4 }} />
-                                    </LineChart>
-                                </ResponsiveContainer>
-                            </div>
+                        <Card title="Vitals Trends" className="mt-6 border-slate-100 dark:border-slate-800 shadow-sm">
+                            {(() => {
+                                const trendData = buildPatientTrendData();
+                                if (trendData.length <= 1) {
+                                    return <p className="text-slate-400 italic">Not enough history to show trends.</p>;
+                                }
+
+                                const units = getTrendUnits(patientTrendMetric);
+                                const metricValues = (key: keyof HealthMetrics) => trendData
+                                    .map(d => d[key])
+                                    .filter(v => typeof v === 'number' && Number.isFinite(v as any)) as number[];
+                                const minMax = (values: number[]) => {
+                                    if (!values.length) return null;
+                                    return { min: Math.min(...values), max: Math.max(...values) };
+                                };
+                                const primaryKey: keyof HealthMetrics = patientTrendMetric === 'GLUCOSE'
+                                    ? 'glucose'
+                                    : patientTrendMetric === 'BMI'
+                                        ? 'bmi'
+                                        : patientTrendMetric === 'CHOLESTEROL'
+                                            ? 'cholesterol'
+                                            : 'systolicBP';
+
+                                const latest = trendData[trendData.length - 1];
+                                const stats = minMax(metricValues(primaryKey));
+
+                                const chip = (label: string, value: string) => (
+                                    <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[10px] font-bold bg-slate-50 dark:bg-slate-800 border border-slate-100 dark:border-slate-700 text-slate-600 dark:text-slate-200">
+                                        <span className="text-slate-400">{label}</span>
+                                        <span className="text-slate-700 dark:text-slate-100">{value}</span>
+                                    </span>
+                                );
+
+                                const ToggleBtn: React.FC<{ active: boolean; onClick: () => void; children: React.ReactNode }> = ({ active, onClick, children }) => (
+                                    <button
+                                        type="button"
+                                        onClick={onClick}
+                                        className={`px-3 py-1.5 rounded-lg text-xs font-bold border transition-colors ${active
+                                            ? 'bg-rose-600 text-white border-rose-600'
+                                            : 'bg-white dark:bg-slate-900 text-slate-600 dark:text-slate-200 border-slate-200 dark:border-slate-700 hover:border-rose-400'}`}
+                                    >
+                                        {children}
+                                    </button>
+                                );
+
+                                return (
+                                    <div className="space-y-4">
+                                        <div className="flex flex-col gap-3">
+                                            <div className="flex flex-wrap items-center justify-between gap-3">
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    <ToggleBtn active={patientTrendMetric === 'BP'} onClick={() => setPatientTrendMetric('BP')}>BP</ToggleBtn>
+                                                    <ToggleBtn active={patientTrendMetric === 'GLUCOSE'} onClick={() => setPatientTrendMetric('GLUCOSE')}>Glucose</ToggleBtn>
+                                                    <ToggleBtn active={patientTrendMetric === 'BMI'} onClick={() => setPatientTrendMetric('BMI')}>BMI</ToggleBtn>
+                                                    <ToggleBtn active={patientTrendMetric === 'CHOLESTEROL'} onClick={() => setPatientTrendMetric('CHOLESTEROL')}>Cholesterol</ToggleBtn>
+                                                </div>
+
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    {[7, 30, 90, 0].map((d) => (
+                                                        <ToggleBtn
+                                                            key={d}
+                                                            active={patientTrendRangeDays === (d as any)}
+                                                            onClick={() => setPatientTrendRangeDays(d as any)}
+                                                        >
+                                                            {d === 0 ? 'All' : `${d}d`}
+                                                        </ToggleBtn>
+                                                    ))}
+
+                                                    <label className="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-200 select-none">
+                                                        <input
+                                                            type="checkbox"
+                                                            checked={patientTrendShowAvg}
+                                                            onChange={(e) => setPatientTrendShowAvg(e.target.checked)}
+                                                        />
+                                                        Avg
+                                                    </label>
+                                                </div>
+                                            </div>
+
+                                            {latest && (
+                                                <div className="flex flex-wrap items-center gap-2">
+                                                    {chip('Latest', patientTrendMetric === 'BP'
+                                                        ? `${latest.systolicBP}/${latest.diastolicBP} ${units}`
+                                                        : `${(latest as any)[primaryKey]} ${units}`)}
+                                                    {stats && chip('Min', `${stats.min} ${units}`)}
+                                                    {stats && chip('Max', `${stats.max} ${units}`)}
+                                                </div>
+                                            )}
+                                        </div>
+
+                                            <div className="h-80 w-full mt-3">
+                                            <ResponsiveContainer width="100%" height="100%">
+                                                <AreaChart data={trendData} margin={{ top: 10, right: 14, left: -10, bottom: 10 }}>
+                                                    <defs>
+                                                            <linearGradient id="colorBP" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.2} />
+                                                            <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
+                                                        </linearGradient>
+                                                            <linearGradient id="colorGl" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+                                                            <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                                        </linearGradient>
+                                                            <linearGradient id="colorBmi" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%" stopColor="#6366f1" stopOpacity={0.2} />
+                                                            <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
+                                                        </linearGradient>
+                                                            <linearGradient id="colorChol" x1="0" y1="0" x2="0" y2="1">
+                                                            <stop offset="5%" stopColor="#f59e0b" stopOpacity={0.2} />
+                                                            <stop offset="95%" stopColor="#f59e0b" stopOpacity={0} />
+                                                        </linearGradient>
+                                                    </defs>
+
+                                                        <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.5} />
+                                                    <XAxis
+                                                        dataKey="t"
+                                                        type="number"
+                                                        domain={['dataMin', 'dataMax']}
+                                                        tickFormatter={(v) => {
+                                                            if (!Number.isFinite(v)) return '';
+                                                            return new Date(v).toLocaleDateString(undefined, { month: 'short', day: '2-digit' });
+                                                        }}
+                                                        axisLine={false}
+                                                        tickLine={false}
+                                                        tick={{ fontSize: 11, fill: '#94a3b8' }}
+                                                        minTickGap={24}
+                                                    />
+                                                    <YAxis
+                                                        axisLine={false}
+                                                        tickLine={false}
+                                                        tick={{ fontSize: 12, fill: '#94a3b8' }}
+                                                        width={45}
+                                                    />
+                                                    <Tooltip
+                                                        contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', background: 'rgba(255, 255, 255, 0.95)' }}
+                                                        itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
+                                                        labelFormatter={(label) => (typeof label === 'number' ? formatMetricTimestamp(label) : String(label))}
+                                                    />
+                                                    <Legend wrapperStyle={{ paddingTop: '12px' }} />
+
+                                                    {patientTrendMetric === 'BP' && (
+                                                        <>
+                                                            <ReferenceLine y={120} stroke="#94a3b8" strokeDasharray="6 6" ifOverflow="extendDomain" />
+                                                            <ReferenceLine y={80} stroke="#cbd5e1" strokeDasharray="6 6" ifOverflow="extendDomain" />
+                                                            <Area type="monotone" name="Systolic" dataKey="systolicBP" stroke="#f43f5e" strokeWidth={3} fill="url(#colorBP)" activeDot={{ r: 6, strokeWidth: 0 }} />
+                                                            <Area type="monotone" name="Diastolic" dataKey="diastolicBP" stroke="#fb7185" strokeWidth={2} fillOpacity={0} activeDot={{ r: 5, strokeWidth: 0 }} />
+                                                            {patientTrendShowAvg && (
+                                                                <>
+                                                                    <Line type="monotone" name="Systolic avg" dataKey="ma_systolicBP" stroke="#be123c" strokeWidth={2} dot={false} strokeDasharray="4 4" />
+                                                                    <Line type="monotone" name="Diastolic avg" dataKey="ma_diastolicBP" stroke="#e11d48" strokeWidth={2} dot={false} strokeDasharray="4 4" />
+                                                                </>
+                                                            )}
+                                                        </>
+                                                    )}
+
+                                                    {patientTrendMetric === 'GLUCOSE' && (
+                                                        <>
+                                                            <ReferenceLine y={100} stroke="#94a3b8" strokeDasharray="6 6" ifOverflow="extendDomain" />
+                                                            <ReferenceLine y={140} stroke="#cbd5e1" strokeDasharray="6 6" ifOverflow="extendDomain" />
+                                                            <Area type="monotone" name="Glucose" dataKey="glucose" stroke="#10b981" strokeWidth={3} fill="url(#colorGl)" activeDot={{ r: 6, strokeWidth: 0 }} />
+                                                            {patientTrendShowAvg && <Line type="monotone" name="Glucose avg" dataKey="ma_glucose" stroke="#047857" strokeWidth={2} dot={false} strokeDasharray="4 4" />}
+                                                        </>
+                                                    )}
+
+                                                    {patientTrendMetric === 'BMI' && (
+                                                        <>
+                                                            <ReferenceLine y={25} stroke="#94a3b8" strokeDasharray="6 6" ifOverflow="extendDomain" />
+                                                            <ReferenceLine y={30} stroke="#cbd5e1" strokeDasharray="6 6" ifOverflow="extendDomain" />
+                                                            <Area type="monotone" name="BMI" dataKey="bmi" stroke="#6366f1" strokeWidth={3} fill="url(#colorBmi)" activeDot={{ r: 6, strokeWidth: 0 }} />
+                                                            {patientTrendShowAvg && <Line type="monotone" name="BMI avg" dataKey="ma_bmi" stroke="#4338ca" strokeWidth={2} dot={false} strokeDasharray="4 4" />}
+                                                        </>
+                                                    )}
+
+                                                    {patientTrendMetric === 'CHOLESTEROL' && (
+                                                        <>
+                                                            <ReferenceLine y={200} stroke="#94a3b8" strokeDasharray="6 6" ifOverflow="extendDomain" />
+                                                            <ReferenceLine y={240} stroke="#cbd5e1" strokeDasharray="6 6" ifOverflow="extendDomain" />
+                                                            <Area type="monotone" name="Cholesterol" dataKey="cholesterol" stroke="#f59e0b" strokeWidth={3} fill="url(#colorChol)" activeDot={{ r: 6, strokeWidth: 0 }} />
+                                                            {patientTrendShowAvg && <Line type="monotone" name="Chol avg" dataKey="ma_cholesterol" stroke="#b45309" strokeWidth={2} dot={false} strokeDasharray="4 4" />}
+                                                        </>
+                                                    )}
+
+                                                    <Brush
+                                                        dataKey="label"
+                                                        height={18}
+                                                        stroke="#e11d48"
+                                                        travellerWidth={10}
+                                                    />
+                                                </AreaChart>
+                                            </ResponsiveContainer>
+                                        </div>
+                                    </div>
+                                );
+                            })()}
                         </Card>
                     )}
 
                     {patientTab === 'MEDS' && (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6">
-                            <Card title="Prescriptions">
-                                <div className="space-y-3">
-                                    {patientMeds.map(m => (
-                                        <div key={m.id} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-700">
-                                            <div>
-                                                <p className="font-bold text-sm text-slate-800 dark:text-white">{m.name}</p>
-                                                <p className="text-xs text-slate-500">{m.dosage} • {m.time}</p>
+                        <div className="space-y-6 pt-6">
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                <Card title="Prescriptions">
+                                    {medSafetyAlert && (
+                                        <div className={`mb-3 rounded-xl border px-3 py-2 text-[11px] leading-snug ${
+                                            medSafetyAlert.severity === 'HIGH'
+                                                ? 'bg-red-50 border-red-200 text-red-800'
+                                                : medSafetyAlert.severity === 'MEDIUM'
+                                                    ? 'bg-amber-50 border-amber-200 text-amber-800'
+                                                    : 'bg-blue-50 border-blue-200 text-blue-800'
+                                        }`}>
+                                            <div className="flex items-center justify-between mb-1">
+                                                <span className="font-bold uppercase tracking-wide">Medication Safety Alert</span>
+                                                <span className="text-[9px] font-semibold opacity-80">{medSafetyAlert.severity} PRIORITY</span>
                                             </div>
-                                            <button onClick={() => handleDeleteMedication(m.id)} className="text-red-500 hover:text-red-700 text-xs font-bold">Remove</button>
+                                            <p>{medSafetyAlert.summary}</p>
+                                            <p className="mt-1 opacity-90">{medSafetyAlert.details}</p>
+                                            {medSafetyAlert.pairs && medSafetyAlert.pairs.length > 0 && (
+                                                <ul className="mt-2 space-y-1 list-disc list-inside">
+                                                    {medSafetyAlert.pairs.map((p, idx) => (
+                                                        <li key={idx}>
+                                                            <span className="font-semibold">{p.label}:</span> {p.note}
+                                                        </li>
+                                                    ))}
+                                                </ul>
+                                            )}
+                                            {medSafetyAlert.disclaimer && (
+                                                <p className="mt-2 text-[10px] opacity-80">{medSafetyAlert.disclaimer}</p>
+                                            )}
                                         </div>
-                                    ))}
-                                </div>
+                                    )}
+                                    <div className="space-y-3">
+                                        {patientMeds.map(m => (
+                                            <div key={m.id} className="flex justify-between items-center p-3 bg-slate-50 dark:bg-slate-700/50 rounded-xl border border-slate-100 dark:border-slate-700">
+                                                <div>
+                                                    <p className="font-bold text-sm text-slate-800 dark:text-white">{m.name}</p>
+                                                    <p className="text-xs text-slate-500">{m.dosage} • {m.time}</p>
+                                                </div>
+                                                <button onClick={() => handleDeleteMedication(m.id)} className="text-red-500 hover:text-red-700 text-xs font-bold">Remove</button>
+                                            </div>
+                                        ))}
+                                    </div>
+                                </Card>
+                                <Card title="Add Medication">
+                                    <div className="space-y-3">
+                                        <Input label="Drug Name" value={newMedName} onChange={e => setNewMedName(e.target.value)} placeholder="e.g. Metformin" />
+                                        <div className="flex gap-2">
+                                            <div className="flex-1">
+                                                <Input label="Dosage" value={newMedDosage} onChange={e => setNewMedDosage(e.target.value)} placeholder="e.g. 500mg" />
+                                            </div>
+                                            <div className="flex-1">
+                                                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">Frequency</label>
+                                                <select
+                                                    className="w-full p-2.5 border rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                                                    value={newMedFrequency}
+                                                    onChange={e => {
+                                                        const next = e.target.value as MedicationFrequency;
+                                                        setNewMedFrequency(next);
+                                                        // Keep schedule times aligned with the selected frequency.
+                                                        setNewMedTimes(() => defaultTimesForFrequency(next));
+                                                    }}
+                                                >
+                                                    <option value="ONCE_DAILY">{frequencyLabel('ONCE_DAILY')}</option>
+                                                    <option value="TWICE_DAILY">{frequencyLabel('TWICE_DAILY')}</option>
+                                                    <option value="THRICE_DAILY">{frequencyLabel('THRICE_DAILY')}</option>
+                                                    <option value="CUSTOM">{frequencyLabel('CUSTOM')}</option>
+                                                </select>
+                                            </div>
+                                        </div>
+
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                                            <div>
+                                                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">Start Date</label>
+                                                <input
+                                                    type="date"
+                                                    className="w-full p-2.5 border rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                                                    value={newMedStartDate}
+                                                    onChange={e => setNewMedStartDate(e.target.value)}
+                                                />
+                                            </div>
+                                            <div>
+                                                <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">Duration (days)</label>
+                                                <input
+                                                    type="number"
+                                                    min={1}
+                                                    max={365}
+                                                    className="w-full p-2.5 border rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                                                    value={newMedDurationDays}
+                                                    onChange={e => setNewMedDurationDays(parseInt(e.target.value || '7', 10))}
+                                                />
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">Dose Times</label>
+                                            <div className="space-y-2">
+                                                {(newMedTimes && newMedTimes.length > 0 ? newMedTimes : defaultTimesForFrequency(newMedFrequency)).map((t, idx) => (
+                                                    <div key={idx} className="flex items-center gap-2">
+                                                        <input
+                                                            type="time"
+                                                            className="flex-1 p-2.5 border rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white"
+                                                            value={t}
+                                                            onChange={e => {
+                                                                const v = e.target.value;
+                                                                setNewMedTimes(prev => {
+                                                                    const current = (prev && prev.length > 0) ? [...prev] : [...defaultTimesForFrequency(newMedFrequency)];
+                                                                    current[idx] = v;
+                                                                    return current;
+                                                                });
+                                                            }}
+                                                        />
+                                                        {newMedFrequency === 'CUSTOM' && (
+                                                            <button
+                                                                type="button"
+                                                                className="px-2.5 py-2 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                                                onClick={() => setNewMedTimes(prev => (prev || []).filter((_, i) => i !== idx))}
+                                                                disabled={(newMedTimes || []).length <= 1}
+                                                                title="Remove time"
+                                                            >
+                                                                −
+                                                            </button>
+                                                        )}
+                                                    </div>
+                                                ))}
+                                                {newMedFrequency === 'CUSTOM' && (
+                                                    <button
+                                                        type="button"
+                                                        className="w-full px-3 py-2 text-xs font-bold rounded-lg border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
+                                                        onClick={() => setNewMedTimes(prev => ([...(prev && prev.length > 0 ? prev : ['08:00']), '12:00']))}
+                                                    >
+                                                        + Add another time
+                                                    </button>
+                                                )}
+                                            </div>
+                                        </div>
+
+                                        <div>
+                                            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">Instructions (optional)</label>
+                                            <textarea
+                                                className="w-full min-h-[80px] p-2.5 border rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white border-slate-200 dark:border-slate-700"
+                                                value={newMedInstructions}
+                                                onChange={e => setNewMedInstructions(e.target.value)}
+                                                placeholder="e.g. After meals. Avoid grapefruit."
+                                            />
+                                        </div>
+                                        <Button onClick={handleAddMedication} disabled={!newMedName || !newMedDosage} className="w-full">Prescribe</Button>
+                                    </div>
+                                </Card>
+                            </div>
+
+                            <Card title="Missed Dose Alerts">
+                                {(!selectedPatient || medAlerts.filter(a => a.patientId === selectedPatient.id && a.status === 'NEW').length === 0) ? (
+                                    <p className="text-sm text-slate-500">No missed-dose alerts for this patient.</p>
+                                ) : (
+                                    <div className="space-y-3">
+                                        {medAlerts
+                                            .filter(a => a.patientId === selectedPatient.id && a.status === 'NEW')
+                                            .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+                                            .map(a => (
+                                                <div
+                                                    key={a.id}
+                                                    className="flex flex-col md:flex-row md:items-center md:justify-between gap-3 p-3 rounded-xl border border-amber-200 bg-amber-50/60"
+                                                >
+                                                    <div>
+                                                        <p className="text-sm font-bold text-amber-900">{a.medicationName}</p>
+                                                        <p className="text-xs text-amber-800">
+                                                            Missed dose scheduled for {new Date(a.scheduledAt).toLocaleString()}
+                                                        </p>
+                                                        <p className="text-[11px] text-amber-700 mt-1">Alert created {new Date(a.createdAt).toLocaleString()}</p>
+                                                    </div>
+                                                    <div className="flex items-center gap-2">
+                                                        <Button size="sm" variant="outline" onClick={() => handleAcknowledgeMedAlert(a.id)}>
+                                                            Acknowledge
+                                                        </Button>
+                                                    </div>
+                                                </div>
+                                            ))}
+                                    </div>
+                                )}
                             </Card>
-                            <Card title="Add Medication">
-                                <div className="space-y-3">
-                                    <Input label="Drug Name" value={newMedName} onChange={e => setNewMedName(e.target.value)} placeholder="e.g. Metformin" />
-                                    <div className="flex gap-2">
-                                        <div className="flex-1">
-                                            <Input label="Dosage" value={newMedDosage} onChange={e => setNewMedDosage(e.target.value)} placeholder="e.g. 500mg" />
+
+                            <Card title="Prescription OCR">
+                                <div className="space-y-4">
+                                    <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+                                        <div className="lg:col-span-1 space-y-2">
+                                            <p className="text-xs font-bold text-slate-500 uppercase">OCR Recognition</p>
+                                            <input type="file" accept="image/*" onChange={handleOcrFileChange} className="block w-full text-sm text-slate-500 file:mr-4 file:py-2 file:px-4 file:rounded-lg file:border-0 file:text-sm file:font-semibold file:bg-rose-50 file:text-rose-700 hover:file:bg-rose-100" />
+                                            {ocrPreviewUrl && (
+                                                <div className="mt-2 rounded-xl overflow-hidden border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 max-h-40 flex items-center justify-center">
+                                                    <img src={ocrPreviewUrl} alt="Prescription preview" className="max-h-40 object-contain" />
+                                                </div>
+                                            )}
+                                            <Button onClick={handleRunPrescriptionOcr} isLoading={ocrLoading} disabled={!ocrFile || ocrLoading} className="w-full mt-2">
+                                                Run Medicine Extraction
+                                            </Button>
                                         </div>
-                                        <div className="flex-1">
-                                            <label className="text-sm font-semibold text-slate-700 dark:text-slate-300 block mb-1.5">Frequency</label>
-                                            <select className="w-full p-2.5 border rounded-lg bg-white dark:bg-slate-900 text-slate-800 dark:text-white" value={newMedTime} onChange={e => setNewMedTime(e.target.value)}>
-                                                <option>Morning</option>
-                                                <option>Afternoon</option>
-                                                <option>Night</option>
-                                                <option>Twice Daily</option>
-                                            </select>
+
+                                        <div className="lg:col-span-2 space-y-3">
+                                            <p className="text-xs font-bold text-slate-500 uppercase">Medicine Extraction & Correction Panel</p>
+                                            {ocrResult && ocrDraftMeds.length > 0 ? (
+                                                <div className="border border-slate-200 dark:border-slate-700 rounded-xl overflow-hidden">
+                                                    <div className="px-4 py-2 bg-slate-50 dark:bg-slate-800 flex justify-between items-center text-xs text-slate-600 dark:text-slate-300">
+                                                        <span>Confidence: {ocrResult.confidenceScore}%</span>
+                                                        <span>{ocrResult.doctorName || 'Doctor N/A'} • {ocrResult.patientName || selectedPatient?.name}</span>
+                                                    </div>
+                                                    <div className="overflow-x-auto">
+                                                        <table className="min-w-full text-left text-xs">
+                                                            <thead className="bg-slate-50 dark:bg-slate-800 border-b border-slate-200 dark:border-slate-700">
+                                                                <tr>
+                                                                    <th className="px-3 py-2">Medicine</th>
+                                                                    <th className="px-3 py-2">Dosage</th>
+                                                                    <th className="px-3 py-2">Frequency</th>
+                                                                    <th className="px-3 py-2">Duration</th>
+                                                                    <th className="px-3 py-2">Notes</th>
+                                                                </tr>
+                                                            </thead>
+                                                            <tbody className="divide-y divide-slate-200 dark:divide-slate-700">
+                                                                {ocrDraftMeds.map((med, idx) => (
+                                                                    <tr key={idx}>
+                                                                        <td className="px-3 py-1.5">
+                                                                            <input value={med.name} onChange={e => handleUpdateOcrMedField(idx, 'name', e.target.value)} className="w-full px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs" />
+                                                                        </td>
+                                                                        <td className="px-3 py-1.5">
+                                                                            <input value={med.dosage} onChange={e => handleUpdateOcrMedField(idx, 'dosage', e.target.value)} className="w-full px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs" />
+                                                                        </td>
+                                                                        <td className="px-3 py-1.5">
+                                                                            <input value={med.frequency} onChange={e => handleUpdateOcrMedField(idx, 'frequency', e.target.value)} className="w-full px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs" />
+                                                                        </td>
+                                                                        <td className="px-3 py-1.5">
+                                                                            <input value={med.duration} onChange={e => handleUpdateOcrMedField(idx, 'duration', e.target.value)} className="w-full px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs" />
+                                                                        </td>
+                                                                        <td className="px-3 py-1.5">
+                                                                            <input value={med.notes || ''} onChange={e => handleUpdateOcrMedField(idx, 'notes', e.target.value)} className="w-full px-2 py-1 rounded-md border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 text-xs" />
+                                                                        </td>
+                                                                    </tr>
+                                                                ))}
+                                                            </tbody>
+                                                        </table>
+                                                    </div>
+                                                </div>
+                                            ) : (
+                                                <p className="text-xs text-slate-500">Run extraction to populate medicines for review and correction.</p>
+                                            )}
+
+                                            {ocrResult && ocrDraftMeds.length > 0 && (
+                                                <div className="flex justify-end mt-2">
+                                                    <Button onClick={handleApproveOcrMedicines} disabled={ocrLoading}>
+                                                        Final Approval & Add to Meds
+                                                    </Button>
+                                                </div>
+                                            )}
+
+                                            {ocrApproved && (
+                                                <p className="text-xs text-emerald-600 font-semibold mt-2">Final approval completed and medicines added to this patient's list.</p>
+                                            )}
                                         </div>
                                     </div>
-                                    <Button onClick={handleAddMedication} disabled={!newMedName || !newMedDosage} className="w-full">Prescribe</Button>
+
+                                    {ocrError && (
+                                        <div className="text-xs text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">
+                                            {ocrError}
+                                        </div>
+                                    )}
                                 </div>
                             </Card>
                         </div>
@@ -1046,6 +2002,36 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
 
     return (
         <div className="h-full relative p-4 md:p-8">
+            {emergencyAlerts.length > 0 && (
+                <div className="fixed top-4 right-4 z-[130] space-y-3 w-80">
+                    {emergencyAlerts.map((a) => (
+                        <div
+                            key={a.messageId}
+                            className="bg-red-50 border border-red-200 text-red-800 rounded-xl shadow-lg p-3 text-xs flex flex-col gap-1"
+                        >
+                            <div className="flex items-center justify-between gap-2">
+                                <div className="flex items-center gap-2">
+                                    <span className="w-2 h-2 rounded-full bg-red-500 animate-pulse" />
+                                    <span className="font-bold text-[11px] uppercase tracking-wide">Emergency message</span>
+                                </div>
+                                <button
+                                    className="text-[10px] text-red-500 hover:text-red-700"
+                                    onClick={() => setEmergencyAlerts(prev => prev.filter(x => x.messageId !== a.messageId))}
+                                >
+                                    Dismiss
+                                </button>
+                            </div>
+                            <p className="text-[11px] text-red-900/90">
+                                A patient in an active chat reported possible emergency symptoms.
+                            </p>
+                            <p className="text-[10px] text-red-700 font-semibold">
+                                Keywords: {a.keywords.join(', ')}
+                            </p>
+                            {/* Chat navigation disabled; show info only */}
+                        </div>
+                    ))}
+                </div>
+            )}
             <AnimatePresence mode="wait">
                 <motion.div
                     key={viewMode}
@@ -1089,17 +2075,11 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                 </motion.div>
             </AnimatePresence>
 
-            {/* Overlays */}
+            {/* Overlays (communication overlays removed; only passport remains) */}
             {passportToView && (
                 <div className="fixed inset-0 z-[120] bg-white dark:bg-slate-900 overflow-y-auto">
                     <HealthPassport data={passportToView} onClose={() => setPassportToView(null)} isDoctorView={true} />
                 </div>
-            )}
-            {activeVideoCall && (
-                <VideoCall appointmentId={activeVideoCall.id} otherUserName={activeVideoCall.patientName} onClose={() => setActiveVideoCall(null)} />
-            )}
-            {activeChatAppt && (
-                <ChatSystem currentUserId={user.id} currentUserRole={UserRole.DOCTOR} appointmentId={activeChatAppt.id} otherUserName={activeChatAppt.patientName} onClose={() => setActiveChatAppt(null)} />
             )}
         </div>
     );

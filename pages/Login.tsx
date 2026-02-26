@@ -1,10 +1,12 @@
 
-import React, { useState } from 'react';
+import React, { Suspense, useState } from 'react';
 import { User, UserRole } from '../types';
 import { MockBackend } from '../services/mockBackend';
 import { BackendAPI } from '../services/apiClient';
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { LoginCharacter, CharacterState } from '../components/LoginCharacter';
+
+const BeatingHeart3D = React.lazy(() => import('../components/visuals/BeatingHeart3D'));
 
 interface LoginProps {
   onLogin: (user: User) => void;
@@ -29,11 +31,11 @@ const MEDICAL_COUNCILS = [
 ];
 
 // --- Custom Floating Input with External Focus Handlers ---
-const FloatingInput = ({ label, type = "text", value, onChange, icon, required = false, onFocus, onBlur, ...props }: any) => {
+const FloatingInput = ({ label, type = "text", value, onChange, icon, rightAdornment, required = false, onFocus, onBlur, ...props }: any) => {
   const [focused, setFocused] = useState(false);
   return (
     <div className="relative mb-5 group">
-      <div className={`absolute top-4 left-4 transition-colors duration-300 ${focused || value ? 'text-rose-600 dark:text-rose-400' : 'text-slate-400'}`}>
+      <div className={`absolute top-4 left-4 transition-colors duration-300 ${focused || value ? 'text-primary-700 dark:text-primary-300' : 'text-slate-400'}`}>
         {icon}
       </div>
       <input
@@ -43,16 +45,23 @@ const FloatingInput = ({ label, type = "text", value, onChange, icon, required =
         onFocus={(e) => { setFocused(true); onFocus && onFocus(e); }}
         onBlur={(e) => { setFocused(false); onBlur && onBlur(e); }}
         required={required}
-        className={`w-full bg-slate-50 dark:bg-slate-800 border-2 rounded-xl py-3.5 pl-12 pr-4 outline-none transition-all duration-300 font-medium text-slate-700 dark:text-slate-100 ${focused
-            ? 'border-rose-500 bg-white dark:bg-slate-900 shadow-lg shadow-rose-500/10'
+        className={`w-full bg-slate-50 dark:bg-slate-800 border-2 rounded-xl py-3.5 pl-12 ${rightAdornment ? 'pr-12' : 'pr-4'} outline-none transition-all duration-300 font-medium text-slate-700 dark:text-slate-100 ${focused
+          ? 'border-primary-500 bg-white dark:bg-slate-900 shadow-lg shadow-primary-500/10'
             : 'border-slate-100 dark:border-slate-700 hover:border-slate-200 dark:hover:border-slate-600'
           } ${value ? 'bg-white dark:bg-slate-900' : ''}`}
         placeholder=" "
         {...props}
       />
+
+      {rightAdornment && (
+        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+          {rightAdornment}
+        </div>
+      )}
+
       <label
         className={`absolute left-12 transition-all duration-300 pointer-events-none ${focused || value
-            ? '-top-2.5 bg-white dark:bg-slate-900 px-2 text-xs font-bold text-rose-600 dark:text-rose-400'
+            ? '-top-2.5 bg-white dark:bg-slate-900 px-2 text-xs font-bold text-primary-700 dark:text-primary-300'
             : 'top-3.5 text-slate-400 font-medium'
           }`}
       >
@@ -62,7 +71,27 @@ const FloatingInput = ({ label, type = "text", value, onChange, icon, required =
   );
 };
 
+const EyeIcon = ({ open }: { open: boolean }) => {
+  // Minimal inline icon (no extra deps)
+  if (open) {
+    return (
+      <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+        <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+        <circle cx="12" cy="12" r="3" />
+      </svg>
+    );
+  }
+
+  return (
+    <svg className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7S2 12 2 12z" />
+      <path d="M4 4l16 16" />
+    </svg>
+  );
+};
+
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
+  const reduceMotion = useReducedMotion();
   const [role, setRole] = useState<RoleType>('PATIENT');
   const [mode, setMode] = useState<AuthMode>('LOGIN');
   const [loading, setLoading] = useState(false);
@@ -74,11 +103,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   // Login State
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
 
   // Registration States
   const [regName, setRegName] = useState('');
   const [regEmail, setRegEmail] = useState('');
   const [regPassword, setRegPassword] = useState('');
+  const [showRegPassword, setShowRegPassword] = useState(false);
   const [regAge, setRegAge] = useState('');
   const [regGender, setRegGender] = useState<'Male' | 'Female' | 'Other'>('Male');
   const [regBloodGroup, setRegBloodGroup] = useState('O+');
@@ -86,6 +117,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [docName, setDocName] = useState('');
   const [docEmail, setDocEmail] = useState('');
   const [docPassword, setDocPassword] = useState('');
+  const [showDocPassword, setShowDocPassword] = useState(false);
   const [docSpec, setDocSpec] = useState('');
   const [docQual, setDocQual] = useState('');
   const [docRegNo, setDocRegNo] = useState('');
@@ -230,24 +262,46 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   const switchRole = (r: RoleType) => {
     setRole(r); setMode('LOGIN'); setError(''); setEmail(''); setPassword('');
+    setShowLoginPassword(false);
+    setShowRegPassword(false);
+    setShowDocPassword(false);
     setCharacterState('IDLE');
   };
 
   return (
-    <div className="min-h-screen flex bg-white dark:bg-slate-900 font-sans overflow-hidden selection:bg-rose-100 selection:text-rose-900">
+    <div className="min-h-screen flex bg-white dark:bg-slate-900 font-sans overflow-hidden selection:bg-primary-100 selection:text-primary-900 relative">
+
+      {/* Ambient background motion for the whole auth experience */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute inset-0 cxai-gradient-motion opacity-55" />
+        <div className="absolute -top-24 -left-24 w-[320px] h-[320px] bg-primary-300/20 rounded-full blur-3xl animate-blob" />
+        <div className="absolute top-10 -right-24 w-[300px] h-[300px] bg-indigo-300/15 rounded-full blur-3xl animate-blob animation-delay-2000" />
+        <div className="absolute -bottom-28 left-1/3 w-[320px] h-[320px] bg-secondary-300/15 rounded-full blur-3xl animate-blob animation-delay-4000" />
+      </div>
 
       {/* LEFT SIDE: CHARACTER INTERACTION (Desktop Only) */}
       <motion.div
         initial={{ opacity: 0 }}
         animate={{ opacity: 1 }}
         transition={{ duration: 1 }}
-        className="hidden lg:flex lg:w-[50%] relative bg-gradient-to-br from-slate-50 to-teal-50 dark:from-slate-800 dark:to-slate-900 items-center justify-center overflow-hidden flex-col"
+        className="hidden lg:flex lg:w-[50%] relative bg-gradient-to-br from-slate-50 to-teal-50/70 dark:from-slate-800 dark:to-slate-900 items-center justify-center overflow-hidden flex-col z-10"
       >
         {/* Background Decor */}
         <div className="absolute inset-0 opacity-30 pointer-events-none">
           <div className="absolute top-10 left-10 w-32 h-32 bg-teal-200 rounded-full blur-3xl mix-blend-multiply animate-blob"></div>
-          <div className="absolute top-10 right-10 w-32 h-32 bg-rose-200 rounded-full blur-3xl mix-blend-multiply animate-blob animation-delay-2000"></div>
+          <div className="absolute top-10 right-10 w-32 h-32 bg-primary-200 rounded-full blur-3xl mix-blend-multiply animate-blob animation-delay-2000"></div>
           <div className="absolute -bottom-8 left-20 w-32 h-32 bg-purple-200 rounded-full blur-3xl mix-blend-multiply animate-blob animation-delay-4000"></div>
+        </div>
+
+        {/* 3D Heart Visualization (subtle, behind character) */}
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-70">
+          <Suspense
+            fallback={
+              <div className="w-[520px] h-[520px] rounded-[36px] bg-gradient-to-tr from-primary-600/10 via-white/0 to-secondary-500/10" />
+            }
+          >
+            <BeatingHeart3D className="w-[520px] h-[520px]" bpm={72} />
+          </Suspense>
         </div>
 
         {/* Character Component */}
@@ -264,12 +318,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       </motion.div>
 
       {/* RIGHT SIDE: AUTH FORM */}
-      <div className="w-full lg:w-[50%] flex flex-col justify-center items-center p-6 md:p-12 relative bg-white dark:bg-slate-900 overflow-y-auto">
+      <div className="w-full lg:w-[50%] flex flex-col justify-center items-center p-6 md:p-12 relative bg-white/50 dark:bg-slate-900/40 backdrop-blur-sm overflow-y-auto z-10">
 
         <motion.div
-          initial={{ opacity: 0, scale: 0.95 }}
-          animate={{ opacity: 1, scale: 1 }}
-          transition={{ duration: 0.4 }}
+          initial={{ opacity: 0, y: 18, scale: 0.98 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          transition={{ duration: 0.55, ease: 'easeOut' }}
+          whileHover={reduceMotion ? undefined : { y: -2 }}
           className="w-full max-w-md"
         >
           {/* Mobile Logo & Character Fallback (Visible only on small screens) */}
@@ -281,17 +336,25 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             <h2 className="text-2xl font-bold text-slate-800 dark:text-white">CareXAI</h2>
           </div>
 
-          {/* Header */}
-          <div className="mb-8 text-center lg:text-left">
-            <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
-              {mode === 'LOGIN' ? 'Welcome Back' : 'Create Account'}
-            </h2>
-            <p className="text-slate-500 dark:text-slate-400">
-              {mode === 'LOGIN'
-                ? 'Please enter your details to sign in.'
-                : 'Join us to monitor your health intelligently.'}
-            </p>
-          </div>
+          <AnimatePresence mode="wait" initial={false}>
+            <motion.div
+              key={mode}
+              initial={{ opacity: 0, y: 10 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, y: -10 }}
+              transition={{ duration: 0.25, ease: 'easeOut' }}
+              className="mb-8 text-center lg:text-left"
+            >
+              <h2 className="text-3xl font-bold text-slate-900 dark:text-white mb-2">
+                {mode === 'LOGIN' ? 'Welcome Back' : 'Create Account'}
+              </h2>
+              <p className="text-slate-500 dark:text-slate-400">
+                {mode === 'LOGIN'
+                  ? 'Please enter your details to sign in.'
+                  : 'Join us to monitor your health intelligently.'}
+              </p>
+            </motion.div>
+          </AnimatePresence>
 
           {/* Role Switcher */}
           <div className="flex p-1 bg-slate-100 dark:bg-slate-800 rounded-xl mb-8 relative">
@@ -299,7 +362,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
               <button
                 key={r}
                 onClick={() => switchRole(r)}
-                className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all relative z-10 ${role === r ? 'text-rose-700 dark:text-rose-400' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
+                className={`flex-1 py-2.5 text-xs font-bold rounded-lg transition-all relative z-10 ${role === r ? 'text-primary-700 dark:text-primary-300' : 'text-slate-500 dark:text-slate-400 hover:text-slate-700 dark:hover:text-slate-200'
                   }`}
               >
                 {r}
@@ -320,6 +383,30 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
           {/* Form */}
           <form onSubmit={mode === 'LOGIN' ? handleLogin : handleRegister} className="relative">
+
+            {/* Loading progress micro-interaction */}
+            <AnimatePresence>
+              {loading && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  exit={{ opacity: 0, height: 0 }}
+                  className="mb-4"
+                >
+                  <div className="h-2 rounded-full bg-slate-100 dark:bg-slate-800 overflow-hidden border border-slate-200/60 dark:border-slate-700">
+                    <motion.div
+                      className="h-full w-1/3 bg-gradient-to-r from-primary-600 via-secondary-500 to-indigo-500"
+                      animate={reduceMotion ? undefined : { x: ['-60%', '240%'] }}
+                      transition={{ duration: 1.2, repeat: Infinity, ease: 'easeInOut' }}
+                    />
+                  </div>
+                  <div className="mt-2 text-[11px] font-semibold text-slate-500 dark:text-slate-400">
+                    Securing session…
+                  </div>
+                </motion.div>
+              )}
+            </AnimatePresence>
+
             <AnimatePresence mode="wait">
               <motion.div
                 key={mode + role}
@@ -341,12 +428,31 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     />
                     <FloatingInput
                       label="Password"
-                      type="password"
+                      type={showLoginPassword ? 'text' : 'password'}
                       value={password}
                       onChange={(e: any) => setPassword(e.target.value)}
                       onFocus={() => setCharacterState('HIDING')}
                       onBlur={() => setCharacterState('IDLE')}
                       icon={<svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 15v2m-6 4h12a2 2 0 002-2v-6a2 2 0 00-2-2H6a2 2 0 00-2 2v6a2 2 0 002 2zm10-10V7a4 4 0 00-8 0v4h8z" /></svg>}
+                      rightAdornment={
+                        <motion.button
+                          type="button"
+                          onClick={() => setShowLoginPassword((s) => !s)}
+                          whileHover={reduceMotion ? undefined : { scale: 1.06 }}
+                          whileTap={reduceMotion ? undefined : { scale: 0.95 }}
+                          className="p-2 rounded-lg text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50/70 dark:hover:bg-primary-900/10 transition"
+                          aria-label={showLoginPassword ? 'Hide password' : 'Show password'}
+                        >
+                          <motion.span
+                            initial={false}
+                            animate={reduceMotion ? undefined : { rotate: showLoginPassword ? 0 : -6 }}
+                            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                            className="block"
+                          >
+                            <EyeIcon open={showLoginPassword} />
+                          </motion.span>
+                        </motion.button>
+                      }
                     />
                   </>
                 )}
@@ -377,10 +483,37 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                         <option value="AB+">AB+</option>
                         <option value="AB-">AB-</option>
                       </select>
-                      <label className="absolute left-12 -top-2.5 bg-white dark:bg-slate-900 px-2 text-xs font-bold text-rose-600 dark:text-rose-400">Blood Group</label>
+                      <label className="absolute left-12 -top-2.5 bg-white dark:bg-slate-900 px-2 text-xs font-bold text-primary-700 dark:text-primary-300">Blood Group</label>
                     </div>
                     <FloatingInput label="Email" type="email" value={regEmail} onChange={(e: any) => setRegEmail(e.target.value)} icon={<span className="text-lg">✉️</span>} onFocus={() => setCharacterState('WATCHING')} onBlur={() => setCharacterState('IDLE')} />
-                    <FloatingInput label="Password" type="password" value={regPassword} onChange={(e: any) => setRegPassword(e.target.value)} icon={<span className="text-lg">🔒</span>} onFocus={() => setCharacterState('HIDING')} onBlur={() => setCharacterState('IDLE')} />
+                    <FloatingInput
+                      label="Password"
+                      type={showRegPassword ? 'text' : 'password'}
+                      value={regPassword}
+                      onChange={(e: any) => setRegPassword(e.target.value)}
+                      icon={<span className="text-lg">🔒</span>}
+                      onFocus={() => setCharacterState('HIDING')}
+                      onBlur={() => setCharacterState('IDLE')}
+                      rightAdornment={
+                        <motion.button
+                          type="button"
+                          onClick={() => setShowRegPassword((s) => !s)}
+                          whileHover={reduceMotion ? undefined : { scale: 1.06 }}
+                          whileTap={reduceMotion ? undefined : { scale: 0.95 }}
+                          className="p-2 rounded-lg text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50/70 dark:hover:bg-primary-900/10 transition"
+                          aria-label={showRegPassword ? 'Hide password' : 'Show password'}
+                        >
+                          <motion.span
+                            initial={false}
+                            animate={reduceMotion ? undefined : { rotate: showRegPassword ? 0 : -6 }}
+                            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                            className="block"
+                          >
+                            <EyeIcon open={showRegPassword} />
+                          </motion.span>
+                        </motion.button>
+                      }
+                    />
                   </>
                 )}
 
@@ -390,10 +523,37 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                     <FloatingInput label="Specialization" value={docSpec} onChange={(e: any) => setDocSpec(e.target.value)} icon={<span className="text-lg">🩺</span>} onFocus={() => setCharacterState('WATCHING')} onBlur={() => setCharacterState('IDLE')} />
                     <FloatingInput label="Reg. Number" value={docRegNo} onChange={(e: any) => setDocRegNo(e.target.value)} icon={<span className="text-lg">🆔</span>} onFocus={() => setCharacterState('WATCHING')} onBlur={() => setCharacterState('IDLE')} />
                     <FloatingInput label="Email" type="email" value={docEmail} onChange={(e: any) => setDocEmail(e.target.value)} icon={<span className="text-lg">✉️</span>} onFocus={() => setCharacterState('WATCHING')} onBlur={() => setCharacterState('IDLE')} />
-                    <FloatingInput label="Password" type="password" value={docPassword} onChange={(e: any) => setDocPassword(e.target.value)} icon={<span className="text-lg">🔒</span>} onFocus={() => setCharacterState('HIDING')} onBlur={() => setCharacterState('IDLE')} />
+                    <FloatingInput
+                      label="Password"
+                      type={showDocPassword ? 'text' : 'password'}
+                      value={docPassword}
+                      onChange={(e: any) => setDocPassword(e.target.value)}
+                      icon={<span className="text-lg">🔒</span>}
+                      onFocus={() => setCharacterState('HIDING')}
+                      onBlur={() => setCharacterState('IDLE')}
+                      rightAdornment={
+                        <motion.button
+                          type="button"
+                          onClick={() => setShowDocPassword((s) => !s)}
+                          whileHover={reduceMotion ? undefined : { scale: 1.06 }}
+                          whileTap={reduceMotion ? undefined : { scale: 0.95 }}
+                          className="p-2 rounded-lg text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50/70 dark:hover:bg-primary-900/10 transition"
+                          aria-label={showDocPassword ? 'Hide password' : 'Show password'}
+                        >
+                          <motion.span
+                            initial={false}
+                            animate={reduceMotion ? undefined : { rotate: showDocPassword ? 0 : -6 }}
+                            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
+                            className="block"
+                          >
+                            <EyeIcon open={showDocPassword} />
+                          </motion.span>
+                        </motion.button>
+                      }
+                    />
                     <div className="mb-4">
                       <label className="text-xs font-bold text-slate-500 uppercase ml-1">Medical Certificate</label>
-                      <input type="file" className="mt-1 block w-full text-sm text-slate-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-rose-50 dark:file:bg-rose-900 file:text-rose-700 dark:file:text-rose-400 hover:file:bg-rose-100" onChange={e => setDocFile(e.target.files ? e.target.files[0] : null)} />
+                      <input type="file" className="mt-1 block w-full text-sm text-slate-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary-50 dark:file:bg-primary-900 file:text-primary-700 dark:file:text-primary-200 hover:file:bg-primary-100" onChange={e => setDocFile(e.target.files ? e.target.files[0] : null)} />
                     </div>
                   </div>
                 )}
@@ -407,7 +567,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                   initial={{ opacity: 0, height: 0 }}
                   animate={{ opacity: 1, height: 'auto' }}
                   exit={{ opacity: 0, height: 0 }}
-                  className="bg-rose-50 dark:bg-rose-900/30 text-rose-600 dark:text-rose-400 px-4 py-3 rounded-xl text-sm font-medium mb-4 flex items-center gap-2"
+                  className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-200 px-4 py-3 rounded-xl text-sm font-medium mb-4 flex items-center gap-2"
                 >
                   <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
                   {error}
@@ -417,14 +577,34 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
             {/* Action Button */}
             <motion.button
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              whileHover={reduceMotion ? undefined : { scale: 1.02 }}
+              whileTap={reduceMotion ? undefined : { scale: 0.98 }}
               disabled={loading}
-              className="w-full bg-rose-600 dark:bg-rose-600 text-white py-4 rounded-xl font-bold shadow-xl shadow-rose-500/20 dark:shadow-rose-900/20 hover:bg-rose-700 dark:hover:bg-rose-700 transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 group"
+              className="w-full relative overflow-hidden bg-primary-600 dark:bg-primary-600 text-white py-4 rounded-xl font-bold shadow-xl shadow-primary-500/20 dark:shadow-primary-900/20 hover:bg-primary-700 dark:hover:bg-primary-700 transition-all disabled:opacity-70 disabled:cursor-not-allowed flex items-center justify-center gap-2 group"
             >
-              {loading && <svg className="animate-spin w-5 h-5 text-white/50" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
-              {loading ? 'Processing...' : (mode === 'LOGIN' ? 'Sign In' : 'Create Account')}
-              {!loading && <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>}
+              {!reduceMotion && (
+                <motion.span
+                  aria-hidden
+                  className="absolute -left-1/3 top-0 h-full w-1/3 bg-white/15 skew-x-[-18deg]"
+                  animate={loading ? { x: ['-40%', '220%'] } : undefined}
+                  transition={{ duration: 1.1, repeat: Infinity, ease: 'easeInOut' }}
+                />
+              )}
+
+              <AnimatePresence mode="wait" initial={false}>
+                <motion.span
+                  key={loading ? 'loading' : 'ready'}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -6 }}
+                  transition={{ duration: 0.18 }}
+                  className="relative z-10 flex items-center justify-center gap-2"
+                >
+                  {loading && <svg className="animate-spin w-5 h-5 text-white/50" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>}
+                  {loading ? 'Processing…' : (mode === 'LOGIN' ? 'Sign In' : 'Create Account')}
+                  {!loading && <svg className="w-5 h-5 group-hover:translate-x-1 transition-transform" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14 5l7 7m0 0l-7 7m7-7H3" /></svg>}
+                </motion.span>
+              </AnimatePresence>
             </motion.button>
           </form>
 
@@ -435,7 +615,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 {mode === 'LOGIN' ? "Don't have an account?" : "Already have an account?"}
                 <button
                   onClick={() => { setMode(mode === 'LOGIN' ? 'REGISTER' : 'LOGIN'); setError(''); setCharacterState('IDLE'); }}
-                  className="ml-2 font-bold text-rose-600 dark:text-rose-400 hover:text-rose-700 dark:hover:text-rose-300 underline decoration-rose-200 dark:decoration-rose-800 underline-offset-4"
+                  className="ml-2 font-bold text-primary-700 dark:text-primary-300 hover:text-primary-800 dark:hover:text-primary-200 underline decoration-primary-200 dark:decoration-primary-800 underline-offset-4"
                 >
                   {mode === 'LOGIN' ? 'Sign up' : 'Log in'}
                 </button>

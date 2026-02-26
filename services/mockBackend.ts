@@ -1,5 +1,5 @@
 
-import { User, UserRole, DoctorProfile, DoctorStatus, HealthMetrics, AIAnalysisResult, PatientProfile, Document, AdminDocument, DoctorNote, DaySchedule, LabRequest, RiskAlert, AlertSeverity, AlertStatus, Appointment, DoctorAnalytics, FamilyMember, ChatMessage, AuditLog, SystemConfig, AdminStats, Medication, SystemNotification, TimeSlot, HealthPassportData } from '../types';
+import { User, UserRole, DoctorProfile, DoctorStatus, HealthMetrics, AIAnalysisResult, PatientProfile, Document, AdminDocument, DoctorNote, DaySchedule, LabRequest, RiskAlert, AlertSeverity, AlertStatus, Appointment, DoctorAnalytics, FamilyMember, ChatMessage, AuditLog, SystemConfig, AdminStats, Medication, MedicationAdherenceRecord, MedicationDoseScheduleItem, MedicationDoseStatus, MedicationFrequency, MedicationMissedDoseAlert, SystemNotification, TimeSlot, HealthPassportData } from '../types';
 
 // --- INITIAL SEED DATA ---
 const getDefaultSchedule = (): DaySchedule[] => [
@@ -111,8 +111,88 @@ const KEYS = {
   AUDIT_LOGS: 'carexai_audit_logs', 
   SYSTEM_CONFIG: 'carexai_system_config',
   MEDICATIONS: 'carexai_medications',
+  MED_ADHERENCE: 'carexai_med_adherence',
+  MED_ALERTS: 'carexai_med_alerts',
   SYSTEM_NOTIFICATIONS: 'carexai_system_notifications',
   HEALTH_PASSPORTS: 'carexai_health_passports'
+};
+
+const toIsoLocal = (date: string, time: string): string => {
+  // date: YYYY-MM-DD, time: HH:MM (local)
+  const d = new Date(`${date}T${time}:00`);
+  return d.toISOString();
+};
+
+const addDays = (date: string, days: number): string => {
+  const d = new Date(`${date}T00:00:00`);
+  d.setDate(d.getDate() + days);
+  return d.toISOString().slice(0, 10);
+};
+
+const isDateInRange = (date: string, start?: string, end?: string): boolean => {
+  if (start && date < start) return false;
+  if (end && date > end) return false;
+  return true;
+};
+
+const defaultTimesForFrequency = (freq: MedicationFrequency): string[] => {
+  switch (freq) {
+    case 'ONCE_DAILY':
+      return ['08:00'];
+    case 'TWICE_DAILY':
+      return ['08:00', '20:00'];
+    case 'THRICE_DAILY':
+      return ['08:00', '14:00', '20:00'];
+    case 'CUSTOM':
+    default:
+      return ['08:00'];
+  }
+};
+
+const normalizeMedicationTimes = (med: Medication): string[] => {
+  const times = (med.times || []).filter(Boolean);
+  if (times.length > 0) return times;
+
+  // Legacy time-of-day mapping
+  const legacy = (med.time || '').toLowerCase();
+  if (legacy.includes('morning')) return ['08:00'];
+  if (legacy.includes('afternoon')) return ['14:00'];
+  if (legacy.includes('evening')) return ['18:00'];
+  if (legacy.includes('night')) return ['20:00'];
+
+  return defaultTimesForFrequency(med.frequency || 'ONCE_DAILY');
+};
+
+const buildDoseId = (medId: string, date: string, time: string) => `${medId}_${date}_${time}`;
+
+const getAdherenceMap = (patientId: string): Record<string, MedicationAdherenceRecord> => {
+  const all = getStored<Record<string, MedicationAdherenceRecord[]>>(KEYS.MED_ADHERENCE, {});
+  const records = all[patientId] || [];
+  const map: Record<string, MedicationAdherenceRecord> = {};
+  for (const r of records) map[r.doseId] = r;
+  return map;
+};
+
+const upsertAdherenceRecord = (record: MedicationAdherenceRecord) => {
+  const all = getStored<Record<string, MedicationAdherenceRecord[]>>(KEYS.MED_ADHERENCE, {});
+  const list = all[record.patientId] || [];
+  const idx = list.findIndex(r => r.doseId === record.doseId);
+  if (idx >= 0) list[idx] = record;
+  else list.push(record);
+  all[record.patientId] = list;
+  setStored(KEYS.MED_ADHERENCE, all);
+};
+
+const pushMissedDoseAlert = (alert: MedicationMissedDoseAlert) => {
+  const alertsByDoctor = getStored<Record<string, MedicationMissedDoseAlert[]>>(KEYS.MED_ALERTS, {});
+  const list = alertsByDoctor[alert.doctorId] || [];
+  // de-dupe by doseId
+  const exists = list.some(a => a.doseId === alert.doseId);
+  if (!exists) {
+    list.unshift(alert);
+    alertsByDoctor[alert.doctorId] = list;
+    setStored(KEYS.MED_ALERTS, alertsByDoctor);
+  }
 };
 
 const getStored = <T>(key: string, seed: T): T => {
@@ -682,20 +762,69 @@ export const MockBackend = {
   getGlobalAlerts: async (): Promise<RiskAlert[]> => getStored(KEYS.ALERTS, []),
   getMedications: async (id: string) => getStored(KEYS.MEDICATIONS, SEED_MEDICATIONS).filter(m => m.patientId === id),
   
-  // New Medication Methods
+  // --- Medication Orders + Reminders ---
+
+  assignMedicationOrder: async (input: {
+    patientId: string;
+    doctorId?: string;
+    name: string;
+    dosage: string;
+    frequency?: MedicationFrequency;
+    times?: string[];
+    startDate?: string; // YYYY-MM-DD
+    durationDays?: number;
+    instructions?: string;
+  }): Promise<Medication> => {
+    const {
+      patientId,
+      doctorId,
+      name,
+      dosage,
+      frequency = 'ONCE_DAILY',
+      times,
+      startDate = new Date().toISOString().slice(0, 10),
+      durationDays = 7,
+      instructions,
+    } = input;
+
+    const allMeds = getStored<Medication[]>(KEYS.MEDICATIONS, SEED_MEDICATIONS);
+    const endDate = addDays(startDate, Math.max(1, durationDays) - 1);
+
+    const newMed: Medication = {
+      id: Math.random().toString(36).substr(2, 9),
+      patientId,
+      name,
+      dosage,
+      // Keep legacy display fields for existing UI components
+      time: frequency === 'ONCE_DAILY' ? 'Morning' : frequency === 'TWICE_DAILY' ? 'Morning + Night' : frequency === 'THRICE_DAILY' ? 'Morning + Afternoon + Night' : 'Custom',
+      taken: false,
+      prescribedByDoctorId: doctorId,
+      prescribedAt: new Date().toISOString(),
+      instructions,
+      frequency,
+      times: (times && times.length > 0) ? times : defaultTimesForFrequency(frequency),
+      startDate,
+      endDate,
+      durationDays,
+      active: true,
+    };
+    allMeds.push(newMed);
+    setStored(KEYS.MEDICATIONS, allMeds);
+    return newMed;
+  },
+
+  // Backward compatible helper used in older UI flows
   addMedication: async (patientId: string, name: string, dosage: string, time: string): Promise<Medication> => {
-      const allMeds = getStored<Medication[]>(KEYS.MEDICATIONS, SEED_MEDICATIONS);
-      const newMed: Medication = {
-          id: Math.random().toString(36).substr(2, 9),
-          patientId,
-          name,
-          dosage,
-          time,
-          taken: false
-      };
-      allMeds.push(newMed);
-      setStored(KEYS.MEDICATIONS, allMeds); 
-      return newMed;
+    return MockBackend.assignMedicationOrder({
+      patientId,
+      name,
+      dosage,
+      // Map legacy time-of-day to a single scheduled time
+      frequency: 'CUSTOM',
+      times: normalizeMedicationTimes({ id: 'x', patientId, name, dosage, time }),
+      durationDays: 14,
+      startDate: new Date().toISOString().slice(0, 10),
+    });
   },
 
   deleteMedication: async (medId: string): Promise<void> => {
@@ -711,6 +840,146 @@ export const MockBackend = {
           allMeds[index].taken = taken;
           setStored(KEYS.MEDICATIONS, allMeds);
       }
+  },
+
+  getMedicationSchedule: async (patientId: string, date: string): Promise<MedicationDoseScheduleItem[]> => {
+    const meds = getStored<Medication[]>(KEYS.MEDICATIONS, SEED_MEDICATIONS).filter(m => m.patientId === patientId);
+    const adherence = getAdherenceMap(patientId);
+
+    const schedule: MedicationDoseScheduleItem[] = [];
+    for (const med of meds) {
+      if (med.active === false) continue;
+
+      const start = med.startDate;
+      const end = med.endDate;
+      if (!isDateInRange(date, start, end)) continue;
+
+      const times = normalizeMedicationTimes(med);
+      for (const t of times) {
+        const doseId = buildDoseId(med.id, date, t);
+        const scheduledAt = toIsoLocal(date, t);
+        const record = adherence[doseId];
+
+        schedule.push({
+          doseId,
+          patientId,
+          medicationId: med.id,
+          medicationName: med.name,
+          dosage: med.dosage,
+          scheduledDate: date,
+          scheduledTime: t,
+          scheduledAt,
+          status: record?.status || 'PENDING',
+          takenAt: record?.takenAt,
+          updatedAt: record?.updatedAt,
+        });
+      }
+    }
+
+    schedule.sort((a, b) => a.scheduledAt.localeCompare(b.scheduledAt));
+    return schedule;
+  },
+
+  markMedicationDoseStatus: async (input: {
+    patientId: string;
+    doseId: string;
+    status: MedicationDoseStatus;
+    updatedBy: 'PATIENT' | 'SYSTEM';
+  }): Promise<void> => {
+    const { patientId, doseId, status, updatedBy } = input;
+
+    const meds = getStored<Medication[]>(KEYS.MEDICATIONS, SEED_MEDICATIONS);
+    const medId = doseId.split('_')[0];
+    const med = meds.find(m => m.id === medId);
+    if (!med) return;
+
+    // doseId format: <medId>_<YYYY-MM-DD>_<HH:MM>
+    const parts = doseId.split('_');
+    const date = parts[1];
+    const time = parts.slice(2).join('_');
+    const scheduledAt = toIsoLocal(date, time);
+    const nowIso = new Date().toISOString();
+
+    const record: MedicationAdherenceRecord = {
+      doseId,
+      patientId,
+      medicationId: med.id,
+      scheduledAt,
+      status,
+      takenAt: status === 'TAKEN' ? nowIso : undefined,
+      updatedAt: nowIso,
+      updatedBy,
+    };
+
+    upsertAdherenceRecord(record);
+
+    if (status === 'MISSED') {
+      const patients = getStored<PatientProfile[]>(KEYS.PATIENTS, SEED_PATIENTS);
+      const patient = patients.find(p => p.id === patientId);
+      const doctorId = patient?.assignedDoctorId;
+      if (doctorId) {
+        pushMissedDoseAlert({
+          id: Math.random().toString(36).substring(7),
+          doctorId,
+          patientId,
+          patientName: patient?.name || 'Patient',
+          doseId,
+          medicationName: med.name,
+          scheduledAt,
+          createdAt: nowIso,
+          status: 'NEW',
+        });
+      }
+    }
+  },
+
+  sweepMissedDoses: async (patientId: string, nowMs?: number): Promise<{ newlyMissed: number }> => {
+    const now = typeof nowMs === 'number' ? nowMs : Date.now();
+    const today = new Date().toISOString().slice(0, 10);
+    const schedule = await MockBackend.getMedicationSchedule(patientId, today);
+    const graceMs = 30 * 60 * 1000;
+
+    let newlyMissed = 0;
+    for (const item of schedule) {
+      if (item.status !== 'PENDING') continue;
+      const scheduledMs = new Date(item.scheduledAt).getTime();
+      if (Number.isFinite(scheduledMs) && now > scheduledMs + graceMs) {
+        await MockBackend.markMedicationDoseStatus({
+          patientId,
+          doseId: item.doseId,
+          status: 'MISSED',
+          updatedBy: 'SYSTEM',
+        });
+        newlyMissed += 1;
+      }
+    }
+
+    return { newlyMissed };
+  },
+
+  getMedicationAdherenceHistory: async (patientId: string, days = 14): Promise<MedicationAdherenceRecord[]> => {
+    const all = getStored<Record<string, MedicationAdherenceRecord[]>>(KEYS.MED_ADHERENCE, {});
+    const list = (all[patientId] || []).slice();
+    const cutoff = Date.now() - days * 24 * 60 * 60 * 1000;
+    return list
+      .filter(r => new Date(r.scheduledAt).getTime() >= cutoff)
+      .sort((a, b) => b.scheduledAt.localeCompare(a.scheduledAt));
+  },
+
+  getDoctorMedicationAlerts: async (doctorId: string): Promise<MedicationMissedDoseAlert[]> => {
+    const alerts = getStored<Record<string, MedicationMissedDoseAlert[]>>(KEYS.MED_ALERTS, {});
+    return (alerts[doctorId] || []).slice();
+  },
+
+  acknowledgeDoctorMedicationAlert: async (doctorId: string, alertId: string): Promise<void> => {
+    const alerts = getStored<Record<string, MedicationMissedDoseAlert[]>>(KEYS.MED_ALERTS, {});
+    const list = (alerts[doctorId] || []).slice();
+    const idx = list.findIndex(a => a.id === alertId);
+    if (idx >= 0) {
+      list[idx] = { ...list[idx], status: 'ACKNOWLEDGED' };
+      alerts[doctorId] = list;
+      setStored(KEYS.MED_ALERTS, alerts);
+    }
   },
 
   getSystemNotifications: async (uid: string, role: UserRole): Promise<SystemNotification[]> => {

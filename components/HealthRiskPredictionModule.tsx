@@ -1,12 +1,11 @@
 
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import { HealthMetrics, AIAnalysisResult, DiseasePrediction, ExtractedParameter } from '../types';
 import { Card } from './ui/Card';
 import { Button } from './ui/Button';
 import { Input } from './ui/Input';
 import { motion, AnimatePresence } from 'framer-motion';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
-import { GeminiService } from '../services/geminiService';
 
 interface Props {
   metrics: HealthMetrics;
@@ -20,14 +19,6 @@ interface Props {
 
 export const HealthRiskPredictionModule: React.FC<Props> = ({ metrics, history, aiResult, onUpdateMetrics, onAnalyze, loading, symptomProfile }) => {
   const [expandedCard, setExpandedCard] = useState<string | null>(null);
-  const [inputMode, setInputMode] = useState<'ESTIMATED' | 'MANUAL' | 'REPORT'>(symptomProfile ? 'ESTIMATED' : 'MANUAL');
-  
-  // File Upload & Dynamic Data State
-  const [reportFile, setReportFile] = useState<File | null>(null);
-  const [extractedData, setExtractedData] = useState<ExtractedParameter[]>([]);
-  const [isExtracting, setIsExtracting] = useState(false);
-  const [extractError, setExtractError] = useState<string | null>(null);
-  const fileInputRef = useRef<HTMLInputElement>(null);
 
   const updateBMI = (w: number, h: number) => {
     if (w > 0 && h > 0) {
@@ -36,41 +27,6 @@ export const HealthRiskPredictionModule: React.FC<Props> = ({ metrics, history, 
     } else {
       onUpdateMetrics({ ...metrics, weight: w, height: h });
     }
-  };
-
-  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-
-    setReportFile(file);
-    setIsExtracting(true);
-    setExtractError(null);
-    setExtractedData([]);
-
-    const reader = new FileReader();
-    reader.onloadend = async () => {
-      const base64String = (reader.result as string).split(',')[1];
-      try {
-        const data = await GeminiService.extractMetricsFromReport(base64String, file.type);
-        setExtractedData(data);
-        
-        // Auto-update BMI if found in report
-        const calculatedBMI = GeminiService.calculateDynamicBMI(data);
-        if (calculatedBMI) {
-            onUpdateMetrics({ ...metrics, bmi: calculatedBMI });
-        }
-
-        setInputMode('REPORT');
-      } catch (err) {
-        console.error(err);
-        setExtractError("Failed to read report. Please ensure image is clear.");
-        setReportFile(null);
-      } finally {
-        setIsExtracting(false);
-        e.target.value = '';
-      }
-    };
-    reader.readAsDataURL(file);
   };
 
   const getRiskColor = (level: string) => {
@@ -191,124 +147,75 @@ export const HealthRiskPredictionModule: React.FC<Props> = ({ metrics, history, 
         {/* LEFT COLUMN: Input Form */}
         <div className="space-y-5 lg:border-r lg:border-slate-100 lg:pr-6">
           
-          {/* Mode Switcher */}
-          {symptomProfile && (
-             <div className="flex bg-slate-100 p-1 rounded-xl mb-4">
-               <button onClick={() => setInputMode('ESTIMATED')} className={`flex-1 text-xs font-bold py-2 rounded-lg transition-all ${inputMode === 'ESTIMATED' ? 'bg-white shadow text-teal-700' : 'text-slate-400 hover:text-slate-600'}`}>Estimates</button>
-               <button onClick={() => setInputMode('REPORT')} className={`flex-1 text-xs font-bold py-2 rounded-lg transition-all ${inputMode === 'REPORT' || inputMode === 'MANUAL' ? 'bg-white shadow text-teal-700' : 'text-slate-400 hover:text-slate-600'}`}>Lab Report</button>
-             </div>
-          )}
+          {/* Mode switcher removed: only direct input used now */}
 
           <div className="grid grid-cols-2 gap-4">
-            <Input label="Height (cm)" type="number" value={metrics.height || ''} onChange={e => updateBMI(metrics.weight || 0, parseFloat(e.target.value))} />
-            <Input label="Weight (kg)" type="number" value={metrics.weight || ''} onChange={e => updateBMI(parseFloat(e.target.value), metrics.height || 0)} />
+            <Input
+              label="Height (cm)"
+              type="number"
+              value={metrics.height || ''}
+              onChange={e => updateBMI(metrics.weight || 0, parseFloat(e.target.value))}
+            />
+            <Input
+              label="Weight (kg)"
+              type="number"
+              value={metrics.weight || ''}
+              onChange={e => updateBMI(parseFloat(e.target.value), metrics.height || 0)}
+            />
           </div>
           <div className="bg-slate-100 p-2 rounded text-center text-xs font-bold text-slate-600">Calculated BMI: {metrics.bmi || '--'}</div>
 
-          {inputMode === 'REPORT' || inputMode === 'MANUAL' ? (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                
-                {/* FILE UPLOAD SECTION */}
-                <div className={`p-4 border-2 border-dashed rounded-xl transition-colors ${reportFile ? 'border-emerald-300 bg-emerald-50' : 'border-slate-200 hover:border-teal-300'}`}>
-                    <div className="flex flex-col items-center justify-center text-center">
-                        {isExtracting ? (
-                            <div className="flex flex-col items-center py-2">
-                                <svg className="animate-spin h-8 w-8 text-teal-600 mb-2" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24"><circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle><path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path></svg>
-                                <span className="text-xs font-bold text-teal-700">Extracting data...</span>
-                            </div>
-                        ) : reportFile ? (
-                            <div className="flex items-center gap-3 w-full">
-                                <div className="h-10 w-10 bg-emerald-100 rounded-lg flex items-center justify-center text-emerald-600">
-                                    <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 12l2 2 4-4m6 2a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                                </div>
-                                <div className="text-left flex-1 min-w-0">
-                                    <p className="text-xs font-bold text-emerald-800 truncate">{reportFile.name}</p>
-                                    <p className="text-[10px] text-emerald-600">Found {extractedData.length} parameters</p>
-                                </div>
-                                <button onClick={() => { setReportFile(null); setExtractedData([]); setInputMode('MANUAL'); }} className="text-slate-400 hover:text-red-500">✕</button>
-                            </div>
-                        ) : (
-                            <>
-                                <button onClick={() => fileInputRef.current?.click()} className="flex flex-col items-center gap-2 w-full py-4">
-                                    <span className="text-3xl">📄</span>
-                                    <span className="text-sm font-bold text-slate-600">Upload Lab Report</span>
-                                    <span className="text-[10px] text-slate-400">PDF or Image (Required for analysis)</span>
-                                </button>
-                                <input ref={fileInputRef} type="file" className="hidden" accept="image/*,application/pdf" onChange={handleFileUpload} />
-                            </>
-                        )}
-                        {extractError && <p className="text-xs text-red-500 mt-2 font-bold">{extractError}</p>}
-                    </div>
-                </div>
-
-                {/* DYNAMIC EXTRACTED DATA TABLE */}
-                {extractedData.length > 0 && (
-                    <div className="bg-slate-50 rounded-xl p-3 border border-slate-200 max-h-60 overflow-y-auto custom-scrollbar">
-                        <div className="flex justify-between items-center mb-2">
-                            <h4 className="text-xs font-bold text-slate-500 uppercase">Extracted Values</h4>
-                            <span className="text-[10px] text-slate-400">Editable</span>
-                        </div>
-                        <div className="space-y-2">
-                            {extractedData.map((item, idx) => (
-                                <div key={idx} className="grid grid-cols-12 gap-2 items-center bg-white p-2 rounded border border-slate-100">
-                                    <div className="col-span-5 text-xs font-bold text-slate-700 truncate" title={item.testName}>{item.testName}</div>
-                                    <input 
-                                        type="text" 
-                                        value={item.value} 
-                                        onChange={(e) => {
-                                            const newData = [...extractedData];
-                                            newData[idx].value = e.target.value;
-                                            setExtractedData(newData);
-                                        }}
-                                        className="col-span-4 text-xs p-1 border rounded text-center bg-slate-50"
-                                    />
-                                    <div className="col-span-3 text-[10px] text-slate-400 truncate">{item.unit}</div>
-                                </div>
-                            ))}
-                        </div>
-                    </div>
-                )}
-
-                {/* MANUAL FALLBACK (Only if no file uploaded yet) */}
-                {!reportFile && (
-                    <div className="opacity-50 pointer-events-none">
-                        <Input label="Systolic BP" type="number" placeholder="120" value="" disabled />
-                    </div>
-                )}
-            </motion.div>
-          ) : (
-            <motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} className="space-y-4">
-                <div className={`p-4 rounded-xl border flex items-center justify-between ${getRiskColor(symptomProfile?.bpRisk || 'Low')}`}>
-                    <div className="flex items-center gap-3"><span className="text-xl">🩸</span><div><p className="text-xs font-bold uppercase opacity-70">Blood Pressure</p><p className="font-bold text-lg">{symptomProfile?.bpRisk} Risk</p></div></div>
-                    <div className="text-[10px] font-bold bg-white/50 px-2 py-1 rounded">AI Est.</div>
-                </div>
-                <div className={`p-4 rounded-xl border flex items-center justify-between ${getRiskColor(symptomProfile?.glucoseRisk || 'Low')}`}>
-                    <div className="flex items-center gap-3"><span className="text-xl">🍬</span><div><p className="text-xs font-bold uppercase opacity-70">Blood Glucose</p><p className="font-bold text-lg">{symptomProfile?.glucoseRisk}</p></div></div>
-                    <div className="text-[10px] font-bold bg-white/50 px-2 py-1 rounded">AI Est.</div>
-                </div>
-            </motion.div>
-          )}
-
-          <div className="space-y-3 pt-2">
-            <div className="flex flex-col gap-1">
-                <label className="text-xs font-bold text-slate-500 uppercase">Activity Level</label>
-                <div className="flex bg-slate-100 rounded-lg p-1">
-                    {['Low', 'Moderate', 'High'].map(lvl => (
-                        <button key={lvl} onClick={() => onUpdateMetrics({...metrics, activityLevel: lvl as any})} className={`flex-1 text-xs font-bold py-2 rounded-md transition-all ${metrics.activityLevel === lvl ? 'bg-white shadow text-teal-700' : 'text-slate-400 hover:text-slate-600'}`}>{lvl}</button>
-                    ))}
-                </div>
-            </div>
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <Input
+              label="Systolic BP (mmHg)"
+              type="number"
+              value={metrics.systolicBP || ''}
+              onChange={e => onUpdateMetrics({ ...metrics, systolicBP: parseFloat(e.target.value) || 0 })}
+            />
+            <Input
+              label="Diastolic BP (mmHg)"
+              type="number"
+              value={metrics.diastolicBP || ''}
+              onChange={e => onUpdateMetrics({ ...metrics, diastolicBP: parseFloat(e.target.value) || 0 })}
+            />
           </div>
 
-          <Button 
-            onClick={() => onAnalyze(extractedData)} // Pass extracted data to analyze function
-            isLoading={loading} 
-            disabled={isExtracting || (inputMode === 'REPORT' && !reportFile && extractedData.length === 0)}
-            className="w-full mt-4"
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <Input
+              label="Glucose (mg/dL)"
+              type="number"
+              value={metrics.glucose || ''}
+              onChange={e => onUpdateMetrics({ ...metrics, glucose: parseFloat(e.target.value) || 0 })}
+            />
+            <Input
+              label="Cholesterol (mg/dL)"
+              type="number"
+              value={metrics.cholesterol || ''}
+              onChange={e => onUpdateMetrics({ ...metrics, cholesterol: parseFloat(e.target.value) || 0 })}
+            />
+          </div>
+
+          <div className="grid grid-cols-2 gap-4 mt-4">
+            <Input
+              label="Max Heart Rate"
+              type="number"
+              value={metrics.maxHeartRate || ''}
+              onChange={e => onUpdateMetrics({ ...metrics, maxHeartRate: parseFloat(e.target.value) || 0 })}
+            />
+            <Input
+              label="ST Depression (0-6)"
+              type="number"
+              value={metrics.stDepression || ''}
+              onChange={e => onUpdateMetrics({ ...metrics, stDepression: parseFloat(e.target.value) || 0 })}
+            />
+          </div>
+
+          <Button
+            onClick={() => onAnalyze()}
+            isLoading={loading}
+            className="w-full mt-6"
           >
-            {inputMode === 'REPORT' && !reportFile 
-                ? 'Upload Report to Analyze' 
-                : 'Run AI Prediction'}
+            Run AI Prediction
           </Button>
         </div>
 
@@ -323,11 +230,9 @@ export const HealthRiskPredictionModule: React.FC<Props> = ({ metrics, history, 
               <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center mb-4 shadow-sm"><span className="text-3xl">🤖</span></div>
               <h4 className="text-slate-700 font-bold">Ready to Analyze</h4>
               <p className="text-sm text-slate-500 mt-2 max-w-xs">
-                  {inputMode === 'ESTIMATED' 
-                    ? "AI will estimate risks based on your symptoms." 
-                    : inputMode === 'REPORT' && extractedData.length > 0 
-                        ? `Extracted ${extractedData.length} values. Ready for analysis.`
-                        : "Upload a report to extract vitals automatically."}
+                {symptomProfile
+                  ? 'AI will estimate risks based on your symptoms.'
+                  : 'Enter your details and run AI prediction to see your risk profile.'}
               </p>
             </div>
           )}

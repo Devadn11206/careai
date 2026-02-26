@@ -1,25 +1,31 @@
 
 import React, { useState, useEffect, useRef } from 'react';
-import { UserRole, ChatMessage } from '../types';
+import { UserRole, ChatMessage, PresenceUpdate, TypingEvent } from '../types';
 import { BackendAPI } from '../services/apiClient';
+import { GeminiService } from '../services/geminiService';
 import { motion } from 'framer-motion';
 
 interface Props {
   currentUserId: string;
   currentUserRole: UserRole;
   appointmentId: string;
+    otherUserId: string;
   otherUserName: string;
   onClose: () => void;
   onVideoCall?: () => void;
 }
 
-export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, appointmentId, otherUserName, onClose, onVideoCall }) => {
+export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, appointmentId, otherUserId, otherUserName, onClose, onVideoCall }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [newMessage, setNewMessage] = useState('');
   const [attachment, setAttachment] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
   const [accessError, setAccessError] = useState<string | null>(null);
+    const [isOtherOnline, setIsOtherOnline] = useState<boolean>(false);
+    const [isOtherTyping, setIsOtherTyping] = useState<boolean>(false);
+    const [aiSuggestion, setAiSuggestion] = useState<string>('');
+    const [aiLoading, setAiLoading] = useState<boolean>(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -37,7 +43,9 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
 
   useEffect(() => {
         fetchMessages();
-        const unsubscribeSocket = BackendAPI.onChatMessage((msg) => {
+        BackendAPI.getPresence(otherUserId).then((p) => setIsOtherOnline(p.online)).catch(() => {});
+
+        const unsubscribeChat = BackendAPI.onChatMessage((msg) => {
             if (msg.appointmentId !== appointmentId) return;
             setMessages((prev) => {
                 const exists = prev.find((m) => m.id === msg.id);
@@ -45,10 +53,22 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
                 return [...prev, msg];
             });
         });
+        const unsubscribePresence = BackendAPI.onPresenceUpdate((p: PresenceUpdate) => {
+            if (p.userId === otherUserId) {
+                setIsOtherOnline(p.online);
+            }
+        });
+        const unsubscribeTyping = BackendAPI.onTyping((t: TypingEvent) => {
+            if (t.appointmentId !== appointmentId) return;
+            if (t.senderId === currentUserId) return;
+            setIsOtherTyping(t.isTyping);
+        });
         return () => {
-            unsubscribeSocket();
+            unsubscribeChat();
+            unsubscribePresence();
+            unsubscribeTyping();
         };
-    }, [appointmentId]);
+    }, [appointmentId, otherUserId, currentUserId]);
 
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -88,12 +108,35 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
     }
   };
 
+    const notifyTyping = (isTyping: boolean) => {
+            const socket = BackendAPI.getSocket();
+            if (!socket) return;
+            socket.emit('chat:typing', { appointmentId, isTyping });
+    };
+
   const decodeMessage = (encoded: string) => {
       try { return atob(encoded); } catch (e) { return encoded; }
   };
 
   const formatTime = (isoString: string) => {
       return new Date(isoString).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: true });
+  };
+
+  const handleGetAISuggestion = async () => {
+      if (currentUserRole !== UserRole.DOCTOR || aiLoading) return;
+      setAiLoading(true);
+      try {
+          const summary = messages
+              .slice(-10)
+              .map(m => `${m.senderRole}: ${m.content}`)
+              .join('\n');
+          const suggestion = await GeminiService.suggestClinicalReply(summary);
+          setAiSuggestion(suggestion);
+      } catch (err) {
+          console.error('Failed to get AI suggestion', err);
+      } finally {
+          setAiLoading(false);
+      }
   };
 
   if (accessError) {
@@ -135,8 +178,14 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
                             {otherUserName.charAt(0)}
                         </div>
                         <div className="text-white">
-                            <h3 className="font-bold text-base leading-tight truncate max-w-[120px]">{otherUserName}</h3>
-                            <p className="text-[11px] text-white/90">Online</p>
+                            <h3 className="font-bold text-base leading-tight truncate max-w-[140px]">{otherUserName}</h3>
+                            <p className="text-[11px] text-white/90">
+                                {isOtherOnline ? 'Online' : 'Offline'}
+                                {isOtherTyping && ' • typing…'}
+                            </p>
+                            <p className="text-[10px] text-emerald-100/90 font-semibold mt-0.5">
+                                Clinical Chat Mode
+                            </p>
                         </div>
                     </div>
                 </div>
@@ -154,7 +203,7 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
             <div className="flex-1 overflow-y-auto p-4 space-y-3 scroll-smooth custom-scrollbar">
                 <div className="flex justify-center mb-6">
                     <span className="bg-[#fff5c4] text-slate-700 text-[10px] font-medium px-3 py-1.5 rounded-lg shadow-sm text-center max-w-[85%] leading-snug">
-                        🔒 Messages are end-to-end encrypted. No one outside of this chat, not even CareXAI, can read or listen to them.
+                        🔒 Clinical chat is encrypted and stored securely for medical records. Only you and your assigned clinician can access this conversation.
                     </span>
                 </div>
                 
@@ -233,6 +282,43 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
                 <div ref={messagesEndRef} />
             </div>
 
+            {/* AI Suggestion (Doctor only) */}
+            {currentUserRole === UserRole.DOCTOR && (
+                <div className="bg-white/80 backdrop-blur-sm border-t border-slate-200 px-3 py-2 text-xs text-slate-700 flex items-start gap-2">
+                    <div className="mt-1 text-emerald-600">
+                        <svg className="w-4 h-4" viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a7 7 0 00-7 7c0 5.25 7 13 7 13s7-7.75 7-13a7 7 0 00-7-7zm0 9.5a2.5 2.5 0 112.5-2.5A2.5 2.5 0 0112 11.5z" /></svg>
+                    </div>
+                    <div className="flex-1">
+                        <div className="flex justify-between items-center mb-1">
+                            <span className="font-semibold">AI Clinical Suggestion</span>
+                            <button
+                                type="button"
+                                onClick={handleGetAISuggestion}
+                                disabled={aiLoading}
+                                className="text-[11px] px-2 py-0.5 rounded-full border border-emerald-500 text-emerald-600 hover:bg-emerald-50 disabled:opacity-50"
+                            >
+                                {aiLoading ? 'Thinking…' : 'Suggest Reply'}
+                            </button>
+                        </div>
+                        <p className="text-[11px] text-slate-500 mb-1">Suggestions are drafts only. Review carefully before sending.</p>
+                        {aiSuggestion && (
+                            <div className="bg-slate-50 border border-slate-200 rounded-lg p-2 text-[11px] whitespace-pre-wrap mb-1 max-h-24 overflow-y-auto">
+                                {aiSuggestion}
+                            </div>
+                        )}
+                        {aiSuggestion && (
+                            <button
+                                type="button"
+                                className="text-[11px] text-emerald-700 font-semibold mt-1"
+                                onClick={() => setNewMessage(prev => prev ? prev + '\n' + aiSuggestion : aiSuggestion)}
+                            >
+                                Insert into message
+                            </button>
+                        )}
+                    </div>
+                </div>
+            )}
+
             {/* Input Area */}
             <div className="bg-[#F0F2F5] px-2 py-2 flex items-center gap-2 shrink-0 border-t border-slate-200">
                 <div className="flex-1 bg-white rounded-[24px] px-3 py-1.5 border border-white shadow-sm flex items-center gap-2">
@@ -246,9 +332,10 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
                     
                     <textarea
                         value={newMessage}
-                        onChange={e => setNewMessage(e.target.value)}
-                        onKeyDown={e => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); }}}
-                        placeholder={attachment ? `File: ${attachment.name}` : "Type a message"}
+                        onChange={e => { setNewMessage(e.target.value); notifyTyping(true); }}
+                        onBlur={() => notifyTyping(false)}
+                        onKeyDown={e => { if(e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleSend(e); notifyTyping(false); }}}
+                        placeholder={attachment ? `Medical report: ${attachment.name}` : "Type a clinical message"}
                         className="w-full max-h-24 bg-transparent outline-none text-base resize-none custom-scrollbar py-2 placeholder-slate-400 text-slate-800"
                         rows={1}
                         style={{ minHeight: '44px' }}

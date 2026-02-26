@@ -118,6 +118,9 @@ export interface HealthMetrics {
   cholesterol: number;
   smoking: boolean;
   activityLevel: 'Low' | 'Moderate' | 'High';
+  // Optional cardiology features used by ML models
+  maxHeartRate?: number; // thalach
+  stDepression?: number; // oldpeak
   familyHistory?: boolean; // New Field
   serumCreatinine?: number;
   tshLevel?: number;

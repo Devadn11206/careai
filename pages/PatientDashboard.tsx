@@ -4,7 +4,6 @@ import { PatientProfile, HealthMetrics, AIAnalysisResult, DoctorProfile, DoctorS
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
-import { GeminiService } from '../services/geminiService';
 import { MockBackend } from '../services/mockBackend';
 import { BackendAPI, BackendDoctor, QueueUpdate } from '../services/apiClient';
 import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
@@ -42,8 +41,19 @@ const itemVariants = {
 export const PatientDashboard: React.FC<Props> = ({ user }) => {
     // --- STATE MANAGEMENT ---
     const [metrics, setMetrics] = useState<HealthMetrics>({
-        systolicBP: 0, diastolicBP: 0, glucose: 0, bmi: 24, cholesterol: 0, smoking: false, activityLevel: 'Moderate', timestamp: '',
-        weight: 74, height: 175, familyHistory: false
+        systolicBP: 0,
+        diastolicBP: 0,
+        glucose: 0,
+        bmi: 24,
+        cholesterol: 0,
+        smoking: false,
+        activityLevel: 'Moderate',
+        maxHeartRate: 0,
+        stDepression: 0,
+        timestamp: '',
+        weight: 74,
+        height: 175,
+        familyHistory: false,
     });
     const [history, setHistory] = useState<HealthMetrics[]>([]);
     const [documents, setDocuments] = useState<Document[]>([]);
@@ -238,25 +248,16 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
     }, [user]);
 
     // --- HANDLERS ---
-    const handleAnalyze = async (dynamicData?: ExtractedParameter[]) => {
+    const handleAnalyze = async () => {
         setLoading(true);
         try {
-            let currentMetrics = { ...metrics };
+            const currentMetrics = { ...metrics };
 
-            // 1. Map dynamic report data to fixed metrics for the UI/Dashboard
-            if (dynamicData && dynamicData.length > 0) {
-                const mapped = GeminiService.mapExtractedToMetrics(dynamicData);
-                currentMetrics = { ...currentMetrics, ...mapped };
-                setMetrics(currentMetrics); // Update UI immediately so Hero section reflects report values
-            }
-
-            const result = await GeminiService.analyzeHealthRisks(
-                currentMetrics,
-                user.age,
-                user.gender,
-                user.symptomRiskProfile,
-                dynamicData
-            );
+            const result = await BackendAPI.analyzeHealthRisk({
+                metrics: currentMetrics,
+                age: Number(user.age) || 0,
+                gender: user.gender,
+            });
 
             setAiResult(result);
 

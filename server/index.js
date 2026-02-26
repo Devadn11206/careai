@@ -7,8 +7,16 @@ import jwt from 'jsonwebtoken';
 import bcrypt from 'bcryptjs';
 import { PrismaClient } from '@prisma/client';
 import AgoraAccessTokenPkg from 'agora-access-token';
+import { spawn } from 'child_process';
+import path from 'path';
+import { fileURLToPath } from 'url';
 
 const { RtcTokenBuilder, RtcRole } = AgoraAccessTokenPkg;
+
+// Resolve repo root so we can call the Python risk models
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+const PYTHON_RISK_SCRIPT = path.resolve(__dirname, '../../handrecognition/ml_risk_cli.py');
 
 const prisma = new PrismaClient();
 
@@ -791,6 +799,127 @@ app.post('/metrics', authMiddleware, async (req, res) => {
   });
 
   res.status(201).json({ ok: true });
+});
+
+// --- AI health risk prediction using local Python models ---
+app.post('/ai/health-risk', authMiddleware, async (req, res) => {
+  const { role } = req.user;
+  if (role !== 'PATIENT') {
+    return res.status(403).json({ error: 'Only patients can analyze their health risks' });
+  }
+
+  const { metrics, age, gender } = req.body || {};
+  const safeMetrics = metrics && typeof metrics === 'object' ? metrics : {};
+
+  const payload = {
+    age: Number(age) || 0,
+    glucose: Number(safeMetrics.glucose) || 0,
+    bmi: Number(safeMetrics.bmi) || 0,
+    bp: Number(safeMetrics.systolicBP) || 0,
+    cholesterol: Number(safeMetrics.cholesterol) || 0,
+    // Optional fields – default to 0 if not provided
+    thalach: Number(safeMetrics.maxHeartRate || 0),
+    oldpeak: Number(safeMetrics.stDepression || 0),
+  };
+
+  // Spawn Python process that wraps the trained ML models
+  const py = spawn('python', [PYTHON_RISK_SCRIPT]);
+
+  let stdout = '';
+  let stderr = '';
+
+  py.stdout.on('data', (data) => {
+    stdout += data.toString();
+  });
+
+  py.stderr.on('data', (data) => {
+    stderr += data.toString();
+  });
+
+  py.on('error', (err) => {
+    console.error('Failed to start Python risk script', err);
+  });
+
+  py.on('close', (code) => {
+    if (code !== 0) {
+      console.error('Python risk script exited with code', code, stderr);
+      return res.status(500).json({ error: 'Risk model failed', details: stderr.trim() });
+    }
+
+    try {
+      const parsed = JSON.parse(stdout || '{}');
+      const diabetesProb = Number(parsed.diabetes_risk) || 0;
+      const heartProb = Number(parsed.heart_risk) || 0;
+      const hyperProb = Number(parsed.hyper_risk) || 0;
+
+      const toPercent = (p) => Math.round(Math.max(0, Math.min(1, p)) * 100);
+
+      const riskLevelFromProb = (p) => {
+        if (p > 0.7) return 'High';
+        if (p > 0.5) return 'Moderate';
+        return 'Low';
+      };
+
+      const buildPrediction = (condition, prob) => {
+        const riskLevel = riskLevelFromProb(prob);
+        const probPct = toPercent(prob);
+
+        let recommendation = 'Maintain regular check-ups and a healthy lifestyle.';
+        if (riskLevel === 'High') {
+          recommendation = 'Consult a specialist promptly and consider further diagnostic tests.';
+        } else if (riskLevel === 'Moderate') {
+          recommendation = 'Schedule a clinical review soon and monitor vitals more frequently.';
+        }
+
+        return {
+          condition,
+          probability: probPct,
+          riskLevel,
+          confidenceScore: 90,
+          topFactors: [],
+          recommendation,
+        };
+      };
+
+      const predictions = [
+        buildPrediction('Diabetes', diabetesProb),
+        buildPrediction('Heart Disease', heartProb),
+        buildPrediction('Hypertension', hyperProb),
+      ];
+
+      const result = {
+        predictions,
+        diabetesRisk: toPercent(diabetesProb),
+        hypertensionRisk: toPercent(hyperProb),
+        heartDiseaseRisk: toPercent(heartProb),
+        ckdRiskLevel: 'Low',
+        strokeRiskScore: 0,
+        thyroidAnalysis: '',
+        keyFactors: [],
+        explanation:
+          'Risk scores generated from local machine-learning models using blood pressure, glucose, BMI, cholesterol and age.',
+        lifestyleRecommendations: [
+          'Maintain a balanced diet rich in vegetables and low in processed sugar.',
+          'Exercise at least 150 minutes per week as tolerated.',
+          'Monitor blood pressure and glucose regularly and follow up with your clinician.',
+        ],
+        confidenceLevel: 'High',
+        confidenceReason:
+          'Models are trained on structured clinical datasets but should not replace professional medical judgment.',
+        confidenceImprovement:
+          'Provide the latest lab values and follow-up measurements to further improve risk estimation accuracy.',
+        timestamp: new Date().toISOString(),
+      };
+
+      return res.json(result);
+    } catch (err) {
+      console.error('Failed to parse Python risk output', err, stdout);
+      return res.status(500).json({ error: 'Invalid output from risk model' });
+    }
+  });
+
+  py.stdin.write(JSON.stringify(payload));
+  py.stdin.end();
 });
 
 // --- Chat messages ---

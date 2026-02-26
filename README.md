@@ -2,6 +2,14 @@
 
 CareXAI is a real-time telehealth platform that connects patients, doctors, and admins through secure video consultations, intelligent AI assistance, and rich clinical dashboards.
 
+## What’s New / Recent Updates
+
+- **Realtime backend is live**: Express + Socket.IO + Prisma (SQLite) powering auth, appointments, chat, schedules/slots, and queue updates.
+- **Local ML risk scoring**: `/ai/health-risk` calls a Python CLI expected at `../handrecognition/ml_risk_cli.py` (diabetes/heart/hypertension).
+- **Telechat with translation**: the Telechat panel can translate messages via Gemini using `VITE_GEMINI_API_KEY`.
+- **Owner admin bootstrap**: backend auto-ensures a single “owner admin” via `OWNER_ADMIN_EMAIL` / `OWNER_ADMIN_PASSWORD`.
+- **Windows convenience scripts**: `start-frontend.ps1` and `server/start-backend.ps1` run dev servers quickly.
+
 ---
 
 ## 1. Project Overview
@@ -55,15 +63,22 @@ Traditional healthcare systems often suffer from:
    - One-to-one chat between patient and doctor per appointment.
    - Read receipts, timestamps, and file attachments (images/PDFs).
 
+- **Telechat (doctor workflow)**
+   - Dedicated chat panel with optional on-the-fly translation (Gemini-powered; see `VITE_GEMINI_API_KEY`).
+
 - **Video consultations**
    - Browser-based video calls using Agora (or equivalent WebRTC provider).
    - Tokens generated securely on the backend.
    - Integrated into the appointment workflow.
 
 - **AI medical assistant**
-   - Gemini-powered chatbot for symptom queries and guidance.
+   - Gemini-powered chatbot for symptom queries and guidance (currently called from the frontend for demo/prototyping).
    - Document upload (e.g., lab reports) with AI-powered extraction and risk analysis.
    - Health passport with key metrics and AI insights.
+
+- **Medication reminders (prototype)**
+   - Patient & doctor UI for medication lists, dose schedules, adherence, and missed-dose alerts.
+   - Note: parts of this flow currently use the in-browser `MockBackend` and are being migrated to the realtime backend.
 
 ### Backend
 
@@ -101,6 +116,10 @@ Traditional healthcare systems often suffer from:
 - **Vite** (development/build tool)
 - **Socket.IO Client** (real-time events)
 - **UI libraries**: Tailwind-style utility classes / custom components
+- **PWA**: `vite-plugin-pwa` + generated icons via `@vite-pwa/assets-generator`
+- **Mobile options**:
+   - **Capacitor** (Android wrapper dependencies included)
+   - **Flutter** WebView wrapper (see `pubspec.yaml`)
 
 ### Backend
 
@@ -120,7 +139,8 @@ Traditional healthcare systems often suffer from:
 ### Hosting / Deployment
 
 - **Frontend**: Vercel
-- **Backend & Database**: (e.g., Render / Railway / Fly.io / managed Postgres provider) – flexible, not tied to a single provider.
+- **Backend**: (e.g., Render / Railway / Fly.io) – flexible, not tied to a single provider.
+- **Database**: SQLite is the current default (Prisma `provider = "sqlite"`). For production-grade deployments you can migrate to Postgres later (requires updating Prisma datasource + migrations).
 
 ---
 
@@ -135,9 +155,9 @@ At a high level:
     - Uses the Agora SDK for video calls, getting tokens from the backend.
 
 2. **API Server (Node.js + Express)**  
-    - Exposes REST endpoints for auth, appointments, chat, metrics, and AI operations.
+   - Exposes REST endpoints for auth, appointments, chat, metrics, schedules/slots, queue updates, and Agora token generation.
     - Issues JWTs on login and verifies them for each protected route.
-    - Uses Prisma to query/update the PostgreSQL database.
+   - Uses Prisma to query/update the SQLite database.
     - Exposes `/agora-token` (or similar) endpoint for secure video token generation.
 
 3. **Realtime Layer (Socket.IO)**  
@@ -148,11 +168,9 @@ At a high level:
 4. **Database (SQLite via Prisma)**  
    - Stores users, appointments, time slots, chat messages, metrics, and AI outputs in a local file-backed database for development.
 
-5. **AI Services (Gemini)**  
-    - Used by backend routes to:
-       - Power chatbot conversations.
-       - Summarize uploaded documents.
-       - Estimate health risks.
+5. **AI Services (Gemini + Local ML)**  
+   - **Gemini** is currently called from the frontend (demo/prototyping) using `@google/genai` and `VITE_GEMINI_API_KEY`.
+   - **Local ML models** are called from the backend for `/ai/health-risk` via the Python CLI at `../handrecognition/ml_risk_cli.py`.
 
 ---
 
@@ -161,36 +179,27 @@ At a high level:
 A simplified folder layout:
 
 ```bash
-carexai/
+careai/
 ├─ App.tsx                 # Root React component
 ├─ index.tsx               # React entry point
 ├─ vite.config.ts          # Vite configuration
-├─ types.ts                # Shared TypeScript types (User, Appointment, ChatMessage, etc.)
+├─ types.ts                # Shared TypeScript types
 ├─ components/             # Reusable UI & feature components
-│  ├─ ChatSystem.tsx       # Real-time chat UI component
-│  ├─ VideoCall.tsx        # Video consultation UI (Agora + camera/mic)
-│  ├─ MedicalChatbot.tsx   # AI assistant UI
-│  └─ ...                  # Other UI modules
-├─ pages/
-│  ├─ Login.tsx            # Auth & registration page
-│  ├─ PatientDashboard.tsx # Patient view
-│  ├─ DoctorDashboard.tsx  # Doctor view
-│  └─ AdminDashboard.tsx   # Admin view
-├─ services/
-│  ├─ apiClient.ts         # REST + Socket.IO client wrapper
-│  ├─ geminiService.ts     # Gemini API integration
-│  └─ ...                  # Utility services
-├─ server/                 # Backend API + realtime server
-│  ├─ index.js             # Express + Socket.IO server entry
-│  ├─ prisma/
-│  │  ├─ schema.prisma     # Prisma schema (PostgreSQL models)
-│  │  └─ migrations/       # Auto-generated migration files
-│  ├─ package.json         # Backend dependencies
+├─ pages/                  # Login + role dashboards
+├─ services/               # API client, Gemini integration, utilities
+├─ server/                 # Backend API + realtime server (Express + Socket.IO + Prisma)
+│  ├─ index.js             # Server entry
+│  ├─ prisma/              # Prisma schema + migrations (SQLite)
 │  └─ README.md            # Backend-specific docs
+├─ android/                # Flutter wrapper (Android)
+├─ ios/                    # Flutter wrapper (iOS)
+├─ lib/                    # Flutter wrapper Dart entry
+├─ public/                 # Static assets
+├─ start-frontend.ps1      # Windows dev shortcut
 └─ README.md               # This file
 ```
 
-> Note: Actual file names may vary slightly, but the responsibilities and structure are similar.
+> Optional local ML: the backend route `POST /ai/health-risk` expects a sibling folder `../handrecognition/` containing `ml_risk_cli.py` (see [server/index.js](server/index.js) and [server/README.md](server/README.md)). If you don’t have that folder, the rest of the app still runs; only that endpoint will fail.
 
 ---
 
@@ -212,7 +221,7 @@ carexai/
 1. Patient selects a doctor and a time slot (via Patient Dashboard).
 2. Frontend calls `POST /appointments` with doctor ID, date, time, and consultation type (VIDEO or IN_PERSON).
 3. Backend:
-    - Creates an appointment record in PostgreSQL.
+   - Creates an appointment record in SQLite (via Prisma).
     - Emits an `appointment:created` event via Socket.IO to:
        - The patient.
        - The doctor.
@@ -244,9 +253,9 @@ carexai/
 ### AI Assistant
 
 1. User opens the AI chatbot or uploads a document.
-2. Frontend sends text or base64-encoded file to a backend AI endpoint.
-3. Backend calls Google Gemini API.
-4. AI response is returned and displayed in the UI, and optionally stored as part of the health passport or analytics.
+2. For Gemini features (chat, report extraction, translation), the frontend calls Gemini directly using `VITE_GEMINI_API_KEY`.
+3. For local ML risk scoring, the frontend calls `POST /ai/health-risk`, and the backend runs the Python models in `../handrecognition/ml_risk_cli.py`.
+4. Results are returned and displayed in the UI.
 
 ---
 
@@ -259,12 +268,22 @@ carexai/
 - **SQLite** (used via Prisma; no separate install needed for local dev)
 - A **Google Gemini API key** (if using AI features)
 - An **Agora** App ID and App Certificate (for video), if you enable video calls
+- **Python 3.x** on PATH (only if using `/ai/health-risk`)
+   - Python packages: `pandas`, `joblib`, `scikit-learn`
 
 ### 8.2. Clone the Repository
 
 ```bash
 git clone <your-repo-url>.git
-cd carexai
+cd careai
+```
+
+If you want to enable the local ML risk endpoint (`POST /ai/health-risk`), ensure you also have a `handrecognition/` folder next to this repo root:
+
+```text
+<parent-folder>/
+   careai/            (this repo)
+   handrecognition/   (Python models; contains ml_risk_cli.py)
 ```
 
 ### 8.3. Install Dependencies
@@ -287,7 +306,7 @@ cd ..
 
 ## 9. Environment Variables Setup
 
-Create two `.env` files: one at the **root** and one inside **server/**.
+Create two `.env` files: one at the repo **root** (frontend) and one inside **server/** (backend).
 
 ### 9.1. Root `.env` (Frontend)
 
@@ -303,7 +322,7 @@ VITE_AGORA_APP_ID=<your_agora_app_id_here>
 
 ### 9.2. Server `.env` (Backend)
 
-Create `./server/.env`:
+Create `./server/.env` (you can start from the template `./server/.env.example`):
 
 ```bash
 # SQLite database (default for local development)
@@ -313,8 +332,10 @@ DATABASE_URL="file:./dev.db"
 JWT_SECRET="<your_jwt_secret_here>"
 PORT=4000
 
-# AI (Gemini)
-GEMINI_API_KEY="<your_gemini_api_key_here>"
+# Owner admin bootstrap (optional)
+# If set, the backend ensures this admin exists on startup.
+OWNER_ADMIN_EMAIL="owner@example.com"
+OWNER_ADMIN_PASSWORD="change-me"
 
 # Video (Agora)
 AGORA_APP_ID="<your_agora_app_id_here>"
@@ -334,7 +355,7 @@ cd server
 # Generate Prisma client
 npx prisma generate
 
-# Apply migrations (creates tables in your Postgres DB)
+# Apply migrations (creates tables in your SQLite file)
 npx prisma migrate dev --name init
 
 # Optional: open Prisma Studio to inspect data
@@ -347,11 +368,22 @@ npx prisma studio
 
 ### 11.1. Start the Backend
 
-From `server/`:
+From the repo root (either option works):
 
 ```bash
+# Option A
+npm run dev:server
+
+# Option B
 cd server
 npm run dev
+```
+
+Windows shortcut:
+
+```powershell
+cd server
+./start-backend.ps1
 ```
 
 This starts the Express + Socket.IO server on:
@@ -365,14 +397,19 @@ http://localhost:4000
 In a separate terminal, from the project root:
 
 ```bash
-cd carexai   # if not already there
 npm run dev
+```
+
+Windows shortcut:
+
+```powershell
+./start-frontend.ps1
 ```
 
 Vite will start the frontend, usually at:
 
 ```text
-http://localhost:3000
+http://localhost:5173
 ```
 
 Open this URL in your browser to use CareXAI.
@@ -436,11 +473,11 @@ If you see errors like `Failed to load resource: net::ERR_CONNECTION_REFUSED` to
 
 Optional: If you’ll proxy API calls through the same origin (e.g., `/api` on Vercel via rewrites), set `VITE_API_BASE_URL` to that proxied base and add the corresponding rewrite rules.
 
-We also include `.env.production.example` showing the required variable for production builds.
+We include `.env.production.example` showing the required variable for production builds.
 
 ---
 
-## 13. API Overview (Brief)
+## 14. API Overview (Brief)
 
 Below is a high-level summary; see backend code or docs for full details.
 
@@ -448,12 +485,13 @@ Below is a high-level summary; see backend code or docs for full details.
 
 - `POST /auth/register` – register a new user (patient/doctor).
 - `POST /auth/login` – login, returns `{ token, user }`.
- - `GET /auth/me` – return the current authenticated user based on the JWT.
+- `GET /auth/me` – return the current authenticated user based on the JWT.
+- `POST /auth/seed-basic` – create sample users for local testing (see server README).
 
 ### Users & Doctors
 
-- `GET /doctors` – list doctors (for patients to choose from).
-- `GET /me` – get current user profile (optional).
+- `GET /doctors` – list doctors.
+- `PATCH /doctors/me` – update the current doctor’s profile.
 
 ### Appointments
 
@@ -471,14 +509,29 @@ Below is a high-level summary; see backend code or docs for full details.
 
 - `POST /agora-token` – generate a video token (requires JWT, body contains `channelName` and `uid`).
 
-### AI
+### Scheduling / Slots
 
-- `POST /ai/chat` – send user query to Gemini for conversational AI.
-- `POST /ai/analyze-report` – upload/report data for AI extraction and risk estimation.
+- `PATCH /doctor/schedule` – save schedule config (slot duration/max patients).
+- `GET /doctors/:doctorId/slots?date=YYYY-MM-DD` – get slots for a date.
+- `PATCH /slots/:slotId/block` – block/unblock a slot.
+
+### Metrics
+
+- `GET /metrics` – patient metrics history (patients) or per patientId (doctors).
+- `POST /metrics` – submit patient metrics.
+
+### AI (Local ML)
+
+- `POST /ai/health-risk` – local Python model risk scores (requires `python` on PATH + packages installed).
+
+### Admin
+
+- `PATCH /admin/doctors/:id/status` – verify/reject doctors.
+- `POST /admin/clear-non-admin-users` – dev helper to reset sample data.
 
 ---
 
-## 14. Screenshots
+## 15. Screenshots
 
 Add your screenshots here once available:
 
@@ -496,7 +549,7 @@ Add your screenshots here once available:
 
 ---
 
-## 15. Progressive Web App (PWA)
+## 16. Progressive Web App (PWA)
 
 - Install prompt and offline shell are enabled via `vite-plugin-pwa`.
 - Manifest: generated at build (`dist/manifest.webmanifest`) with `display: standalone`, theme color `#e11d48`.
@@ -507,7 +560,7 @@ Add your screenshots here once available:
 Local test
 
 ```bash
-cd carexai
+cd careai
 npm run build
 npm run preview
 ```
@@ -520,7 +573,7 @@ Vercel
 
 ---
 
-## 16. Future Improvements
+## 17. Future Improvements
 
 Some ideas to enhance CareXAI:
 
@@ -536,7 +589,7 @@ Some ideas to enhance CareXAI:
 
 ---
 
-## 17. Security & Privacy Considerations
+## 18. Security & Privacy Considerations
 
 - **Authentication & Authorization**
    - JWTs are used for API and WebSocket auth.
@@ -561,7 +614,7 @@ Some ideas to enhance CareXAI:
 
 ---
 
-## 18. License
+## 19. License
 
 Specify your license here. For example:
 

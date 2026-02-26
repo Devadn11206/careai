@@ -4,6 +4,8 @@ This folder contains a **real backend + realtime server** for CareXAI.
 
 - **Tech**: Node.js, Express, Socket.IO, Prisma, SQLite
 - **Realtime**: Every new appointment created via the API emits an `appointment:created` event to the relevant patient, doctor, and all admins.
+- **Queues**: Emits `queue:update` snapshots to patients for OPD-style queue position + delay.
+- **AI (local ML)**: `POST /ai/health-risk` runs Python models from `../../handrecognition/ml_risk_cli.py`.
 
 ## Setup
 
@@ -15,6 +17,22 @@ npm install
 npx prisma migrate dev --name init
 npm run dev
 ```
+
+Windows shortcut:
+
+```powershell
+./start-backend.ps1
+```
+
+### Optional env vars
+
+- `OWNER_ADMIN_EMAIL` / `OWNER_ADMIN_PASSWORD`: ensures a single owner admin account exists on startup.
+- `AGORA_APP_ID` / `AGORA_APP_CERTIFICATE`: required for `POST /agora-token`.
+
+### Python prerequisites (only for `/ai/health-risk`)
+
+- Ensure `python` is available on PATH.
+- Install packages: `pip install pandas joblib scikit-learn`
 
 ## Auth
 

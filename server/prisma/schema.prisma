@@ -62,13 +62,92 @@ model User {
   doctorAppointments  Appointment[] @relation("DoctorAppointments")
 
   // Additional relations
-  healthMetrics  HealthMetric[]   @relation("UserHealthMetrics")
-  doctorSchedule DoctorSchedule?  @relation("UserDoctorSchedule")
-  timeSlots      TimeSlot[]       @relation("UserTimeSlots")
-  sentMessages   ChatMessage[]    @relation("MessageSender")
+  healthMetrics    HealthMetric[]   @relation("UserHealthMetrics")
+  doctorSchedule   DoctorSchedule?  @relation("UserDoctorSchedule")
+  timeSlots        TimeSlot[]       @relation("UserTimeSlots")
+  sentMessages     ChatMessage[]    @relation("MessageSender")
+  receivedMessages ChatMessage[]    @relation("MessageReceiver")
+
+  // Medication reminders
+  medicationOrders           MedicationOrder[]          @relation("PatientMedicationOrders")
+  prescribedMedicationOrders MedicationOrder[]          @relation("MedicationPrescriber")
+  medicationAdherence        MedicationAdherence[]      @relation("PatientMedicationAdherence")
+  medicationAlertsAsDoctor   MedicationMissedDoseAlert[] @relation("DoctorMedicationAlerts")
+  medicationAlertsAsPatient  MedicationMissedDoseAlert[] @relation("PatientMedicationAlerts")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+}
+
+model MedicationOrder {
+  id                   String  @id @default(cuid())
+  patient              User    @relation("PatientMedicationOrders", fields: [patientId], references: [id])
+  patientId            String
+
+  prescribedBy         User?   @relation("MedicationPrescriber", fields: [prescribedByDoctorId], references: [id])
+  prescribedByDoctorId String?
+
+  name         String
+  dosage       String
+  instructions String?
+
+  frequency  String
+  timesJson  String
+  startDate  String
+  endDate    String
+  durationDays Int
+  active     Boolean @default(true)
+
+  adherence MedicationAdherence[]
+  alerts    MedicationMissedDoseAlert[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([patientId, startDate, endDate])
+}
+
+model MedicationAdherence {
+  id           String @id @default(cuid())
+  doseId       String @unique
+
+  patient   User @relation("PatientMedicationAdherence", fields: [patientId], references: [id])
+  patientId String
+
+  medicationOrder MedicationOrder @relation(fields: [medicationId], references: [id])
+  medicationId    String
+
+  scheduledAt DateTime
+  status      String
+  takenAt     DateTime?
+  updatedAt   DateTime @default(now())
+  updatedBy   String
+
+  @@index([patientId, scheduledAt])
+  @@index([medicationId, scheduledAt])
+}
+
+model MedicationMissedDoseAlert {
+  id       String @id @default(cuid())
+  doseId   String
+
+  doctor   User @relation("DoctorMedicationAlerts", fields: [doctorId], references: [id])
+  doctorId String
+
+  patient   User @relation("PatientMedicationAlerts", fields: [patientId], references: [id])
+  patientId String
+
+  medicationOrder MedicationOrder @relation(fields: [medicationId], references: [id])
+  medicationId    String
+
+  scheduledAt   DateTime
+  status        String   @default("NEW")
+  createdAt     DateTime @default(now())
+  acknowledgedAt DateTime?
+
+  @@index([doctorId, status, createdAt])
+  @@index([patientId, createdAt])
+  @@index([medicationId, createdAt])
 }
 
 model Appointment {
@@ -124,16 +203,23 @@ model TimeSlot {
 }
 
 model ChatMessage {
-  id            String      @id @default(cuid())
-  appointment   Appointment @relation("AppointmentMessages", fields: [appointmentId], references: [id])
-  appointmentId String
-  sender        User        @relation("MessageSender", fields: [senderId], references: [id])
-  senderId      String
-  senderRole    UserRole
-  content       String
-  attachmentUrl String?
-  attachmentType String?
-  isRead        Boolean  @default(false)
+  id               String      @id @default(cuid()) @map("message_id")
+  appointment      Appointment @relation("AppointmentMessages", fields: [appointmentId], references: [id])
+  appointmentId    String      @map("appointment_id")
+  sender           User        @relation("MessageSender", fields: [senderId], references: [id])
+  senderId         String      @map("sender_id")
+  receiver         User        @relation("MessageReceiver", fields: [receiverId], references: [id])
+  receiverId       String      @map("receiver_id")
+  senderRole       UserRole
+  content          String      @map("message_text")
+  attachmentUrl    String?     @map("attachment_url")
+  attachmentType   String?
+  encryptionKeyRef String?     @map("encryption_key_reference")
+  isRead           Boolean     @default(false)
 
-  createdAt DateTime @default(now())
+  createdAt DateTime @default(now()) @map("timestamp")
+
+  @@index([appointmentId, createdAt])
+  @@index([senderId, receiverId, createdAt])
+  @@map("chat_messages")
 }

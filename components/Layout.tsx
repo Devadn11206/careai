@@ -101,7 +101,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
             className={`
                 group flex items-center gap-3 px-4 py-3 rounded-2xl text-sm font-medium transition-all duration-300 relative overflow-hidden
                 ${isActive 
-                    ? 'text-white shadow-lg shadow-rose-500/20' 
+                  ? 'text-white shadow-lg shadow-primary-500/20' 
                     : 'text-slate-500 dark:text-slate-400 hover:text-slate-800 dark:hover:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800/50'
                 }
             `}
@@ -110,13 +110,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
             {isActive && (
                 <motion.div 
                     layoutId="activeNav"
-                    className="absolute inset-0 bg-gradient-to-r from-rose-500 to-pink-600"
+                className="absolute inset-0 bg-gradient-to-r from-primary-600 to-secondary-500"
                     initial={false}
                     transition={{ type: "spring", stiffness: 300, damping: 30 }}
                 />
             )}
             
-            <span className={`relative z-10 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-rose-500 transition-colors'}`}>
+            <span className={`relative z-10 ${isActive ? 'text-white' : 'text-slate-400 group-hover:text-primary-600 transition-colors'}`}>
                 {icon}
             </span>
             <span className="relative z-10">{label}</span>
@@ -165,7 +165,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
   };
 
   return (
-    <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B1120] flex flex-col md:flex-row font-sans text-slate-600 dark:text-slate-300 relative selection:bg-rose-100 selection:text-rose-900 transition-colors duration-500">
+    <div className="min-h-screen bg-[#F8FAFC] dark:bg-[#0B1120] flex flex-col md:flex-row font-sans text-slate-600 dark:text-slate-300 relative selection:bg-primary-100 selection:text-primary-900 transition-colors duration-500">
       
       {/* System Notification Toast */}
       <AnimatePresence>
@@ -174,13 +174,13 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
                 initial={{ opacity: 0, y: -50, x: '-50%' }}
                 animate={{ opacity: 1, y: 0, x: '-50%' }}
                 exit={{ opacity: 0, y: -50, x: '-50%' }}
-                className="fixed top-6 left-1/2 z-[100] bg-rose-900/95 backdrop-blur-md dark:bg-rose-950/95 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-4 max-w-lg w-full mx-4 border border-rose-800 ring-1 ring-white/10"
+                className="fixed top-6 left-1/2 z-[100] bg-primary-900/95 backdrop-blur-md dark:bg-primary-900/80 text-white px-6 py-4 rounded-full shadow-2xl flex items-center gap-4 max-w-lg w-full mx-4 border border-primary-800 ring-1 ring-white/10"
             >
                 <div className="p-2 bg-white/10 rounded-full animate-pulse">
-                    <svg className="w-5 h-5 text-rose-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
+                  <svg className="w-5 h-5 text-primary-200" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M11 5.882V19.24a1.76 1.76 0 01-3.417.592l-2.147-6.15M18 13a3 3 0 100-6M5.436 13.683A4.001 4.001 0 017 6h1.832c4.1 0 7.625-1.234 9.168-3v14c-1.543-1.766-5.067-3-9.168-3H7a3.988 3.988 0 01-1.564-.317z" /></svg>
                 </div>
                 <div className="flex-1">
-                    <p className="text-[10px] font-bold text-rose-200 uppercase tracking-wider mb-0.5">System Alert</p>
+                  <p className="text-[10px] font-bold text-primary-200 uppercase tracking-wider mb-0.5">System Alert</p>
                     <p className="text-sm font-medium leading-snug text-white">{sysNotif.message}</p>
                 </div>
                 <button 
@@ -188,7 +188,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
                         MockBackend.markNotificationRead(sysNotif.id, user.id);
                         setSysNotif(null);
                     }}
-                    className="text-rose-300 hover:text-white transition-colors"
+                    className="text-primary-200 hover:text-white transition-colors"
                 >
                     ✕
                 </button>
@@ -200,10 +200,10 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
       <nav className={`fixed inset-y-0 left-0 bg-white/80 dark:bg-slate-900/90 backdrop-blur-xl border-r border-slate-200/60 dark:border-slate-800 flex-shrink-0 z-30 flex flex-col shadow-2xl md:shadow-none transition-transform duration-300 md:static md:translate-x-0 w-[280px] ${mobileMenuOpen ? 'translate-x-0' : '-translate-x-full'} md:h-screen`}>
         <div className="p-8 pb-4 flex justify-between items-center">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 bg-gradient-to-br from-rose-500 to-pink-600 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-rose-500/20 ring-2 ring-rose-100 dark:ring-rose-900/30">C</div>
-            <span className="text-2xl font-bold text-slate-800 dark:text-white tracking-tight">CareX<span className="text-rose-500">AI</span></span>
+            <div className="w-10 h-10 bg-gradient-to-br from-primary-600 to-secondary-500 rounded-xl flex items-center justify-center text-white font-bold text-xl shadow-lg shadow-primary-500/20 ring-2 ring-primary-100 dark:ring-primary-900/30">C</div>
+            <span className="text-2xl font-bold text-slate-800 dark:text-white tracking-tight">CareX<span className="text-secondary-500">AI</span></span>
           </div>
-          <button className="md:hidden text-slate-400 hover:text-rose-600" onClick={() => setMobileMenuOpen(false)}>
+          <button className="md:hidden text-slate-400 hover:text-primary-700" onClick={() => setMobileMenuOpen(false)}>
             <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
           </button>
         </div>
@@ -211,7 +211,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
         {/* User Profile Snippet */}
         <div className="px-6 mb-4">
             <div className="p-4 rounded-2xl bg-gradient-to-br from-slate-50 to-slate-100 dark:from-slate-800 dark:to-slate-800/50 border border-slate-200 dark:border-slate-700/50 flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-700 shadow-sm flex items-center justify-center text-rose-600 font-bold border border-slate-100 dark:border-slate-600">
+                <div className="w-10 h-10 rounded-full bg-white dark:bg-slate-700 shadow-sm flex items-center justify-center text-primary-700 font-bold border border-slate-100 dark:border-slate-600">
                     {user.name.charAt(0)}
                 </div>
                 <div className="flex-1 min-w-0">
@@ -230,7 +230,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
         <div className="p-6 border-t border-slate-200/60 dark:border-slate-800 space-y-3 bg-slate-50/50 dark:bg-slate-900/50">
           <button 
             onClick={toggleTheme}
-            className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-rose-300 dark:hover:border-slate-500 transition-all group shadow-sm hover:shadow-md"
+            className="w-full flex items-center justify-between px-4 py-3 rounded-xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-primary-300 dark:hover:border-slate-500 transition-all group shadow-sm hover:shadow-md"
           >
              <div className="flex items-center gap-3">
                {isDark ? (
@@ -249,7 +249,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
              </div>
           </button>
 
-          <Button variant="ghost" className="w-full justify-start gap-3 hover:bg-rose-50 text-slate-500 hover:text-rose-600 font-medium text-sm" onClick={onLogout}>
+          <Button variant="ghost" className="w-full justify-start gap-3 hover:bg-primary-50 text-slate-500 hover:text-primary-700 font-medium text-sm" onClick={onLogout}>
             <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M17 16l4-4m0 0l-4-4m4 4H7m6 4v1a3 3 0 01-3 3H6a3 3 0 01-3-3V7a3 3 0 013-3h4a3 3 0 013 3v1" /></svg>
             Log Out
           </Button>
@@ -262,7 +262,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
       {/* Mobile Top Bar */}
       <div className="md:hidden fixed top-0 left-0 right-0 h-16 bg-white/90 dark:bg-slate-900/90 backdrop-blur-md border-b border-slate-200 dark:border-slate-800 flex items-center justify-between px-4 z-20 shadow-sm">
          <div className="flex items-center gap-2">
-            <div className="w-8 h-8 bg-gradient-to-br from-rose-500 to-pink-600 rounded-lg flex items-center justify-center text-white font-bold text-lg">C</div>
+          <div className="w-8 h-8 bg-gradient-to-br from-primary-600 to-secondary-500 rounded-lg flex items-center justify-center text-white font-bold text-lg">C</div>
             <span className="text-lg font-bold text-slate-800 dark:text-white">CareXAI</span>
          </div>
          <button onClick={() => setMobileMenuOpen(true)} className="p-2 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 rounded-lg">

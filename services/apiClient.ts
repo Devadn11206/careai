@@ -1,5 +1,5 @@
 import { io, Socket } from 'socket.io-client';
-import { Appointment, ChatMessage, DoctorStatus, HealthMetrics, TimeSlot, UserRole } from '../types';
+import { AIAnalysisResult, Appointment, ChatMessage, DoctorStatus, HealthMetrics, TimeSlot, UserRole } from '../types';
 
 const API_BASE = (import.meta as any).env.VITE_API_BASE_URL || 'http://localhost:4000';
 // Warn if a production build accidentally points to localhost
@@ -239,6 +239,17 @@ export const BackendAPI = {
     await api('/metrics', {
       method: 'POST',
       body: JSON.stringify(metrics),
+    });
+  },
+
+  async analyzeHealthRisk(input: {
+    metrics: HealthMetrics;
+    age: number;
+    gender: string;
+  }): Promise<AIAnalysisResult> {
+    return api<AIAnalysisResult>('/ai/health-risk', {
+      method: 'POST',
+      body: JSON.stringify(input),
     });
   },
 

@@ -3,6 +3,7 @@ import React, { useState, useEffect } from 'react';
 import { User, UserRole, PatientProfile, DoctorProfile } from './types';
 import { Layout } from './components/Layout';
 import { Login } from './pages/Login';
+import { LandingPage } from './pages/LandingPage';
 import { PatientDashboard } from './pages/PatientDashboard';
 import { DoctorDashboard } from './pages/DoctorDashboard';
 import { AdminDashboard } from './pages/AdminDashboard';
@@ -11,11 +12,12 @@ import { BackendAPI, setToken, getToken } from './services/apiClient';
 import { SplashScreen } from './components/SplashScreen';
 import { SymptomScreening } from './components/SymptomScreening';
 
-type AppView = 'SPLASH' | 'APP' | 'SCREENING';
+type AppView = 'SPLASH' | 'LANDING' | 'AUTH' | 'APP' | 'SCREENING';
 
 function App() {
   const [view, setView] = useState<AppView>('SPLASH');
   const [user, setUser] = useState<User | null>(null);
+  const [bootstrapped, setBootstrapped] = useState(false);
 
   // Initialize Background Simulation Engine
   useEffect(() => {
@@ -29,7 +31,7 @@ function App() {
   useEffect(() => {
     const token = getToken();
     if (!token) {
-      setView('APP');
+      setBootstrapped(true);
       return;
     }
 
@@ -38,14 +40,24 @@ function App() {
         const backendUser = await BackendAPI.getCurrentUser();
         setUser(backendUser as User);
         BackendAPI.getSocket();
-        setView('APP');
       } catch {
         // Token invalid/expired; clear it and show login
         setToken(null);
-        setView('APP');
+        setUser(null);
+      } finally {
+        setBootstrapped(true);
       }
     })();
   }, []);
+
+  // If splash is done and session rehydration completed after the splash,
+  // automatically enter the app.
+  useEffect(() => {
+    if (!bootstrapped) return;
+    if (!user) return;
+    if (view === 'SPLASH' || view === 'SCREENING') return;
+    setView('APP');
+  }, [bootstrapped, user, view]);
 
   const handleLogin = (loggedInUser: User) => {
     setUser(loggedInUser);
@@ -90,7 +102,19 @@ function App() {
   };
 
   if (view === 'SPLASH') {
-    return <SplashScreen onComplete={() => setView('APP')} />;
+    return (
+      <SplashScreen
+        onComplete={() => {
+          // If session rehydration already succeeded, go straight to the app.
+          // Otherwise, show the landing page first.
+          if (user) {
+            setView('APP');
+          } else {
+            setView('LANDING');
+          }
+        }}
+      />
+    );
   }
 
   if (view === 'SCREENING' && user && user.role === UserRole.PATIENT) {
@@ -100,7 +124,20 @@ function App() {
   return (
     <Layout user={user} onLogout={handleLogout}>
       {!user ? (
-        <Login onLogin={handleLogin} />
+        view === 'AUTH' ? (
+          <div className="relative">
+            <button
+              onClick={() => setView('LANDING')}
+              className="fixed top-5 left-5 z-[60] rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/80 dark:bg-slate-900/70 backdrop-blur px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:shadow-md hover:border-rose-200 dark:hover:border-rose-900/40 transition"
+              aria-label="Back to landing"
+            >
+              ← Back
+            </button>
+            <Login onLogin={handleLogin} />
+          </div>
+        ) : (
+          <LandingPage onSignIn={() => setView('AUTH')} />
+        )
       ) : (
         renderDashboard()
       )}

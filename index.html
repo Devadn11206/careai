@@ -7,7 +7,7 @@
   <title>CareXAI - Healthcare Intelligence</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="manifest" href="/manifest.webmanifest" />
-  <meta name="theme-color" content="#e11d48" />
+  <meta name="theme-color" content="#2563EB" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="CareXAI" />
@@ -23,22 +23,35 @@
             sans: ['Inter', 'sans-serif'],
           },
           colors: {
-            // Medical Rose / Pink Palette - Calm, Caring, Heart-centric
+            // Blue primary (trustworthy medical)
             primary: {
-              50: '#fff1f2',
-              100: '#ffe4e6',
-              200: '#fecdd3',
-              300: '#fda4af',
-              400: '#fb7185',
-              500: '#f43f5e',
-              600: '#e11d48', // Main Brand Color
-              700: '#be123c',
-              800: '#9f1239',
-              900: '#881337',
+              50: '#eff6ff',
+              100: '#dbeafe',
+              200: '#bfdbfe',
+              300: '#93c5fd',
+              400: '#60a5fa',
+              500: '#3b82f6',
+              600: '#2563eb', // Main Brand Color
+              700: '#1d4ed8',
+              800: '#1e40af',
+              900: '#1e3a8a',
+            },
+            // Teal secondary (calm + wellness)
+            secondary: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              200: '#99f6e4',
+              300: '#5eead4',
+              400: '#2dd4bf',
+              500: '#14b8a6',
+              600: '#0d9488',
+              700: '#0f766e',
+              800: '#115e59',
+              900: '#134e4a',
             },
             // Neutral Slate for text and backgrounds
             slate: {
-              50: '#f9fafb', // Lighter, cleaner gray
+              50: '#F8FAFC', // App background
               100: '#f3f4f6',
               200: '#e5e7eb',
               300: '#d1d5db',
@@ -63,6 +76,57 @@
   <style>
     body {
       font-family: 'Inter', sans-serif;
+    }
+
+    /* Motion helpers (lightweight, global) */
+    @keyframes cxai-blob {
+      0% {
+        transform: translate3d(0, 0, 0) scale(1);
+      }
+      33% {
+        transform: translate3d(18px, -22px, 0) scale(1.06);
+      }
+      66% {
+        transform: translate3d(-14px, 16px, 0) scale(0.98);
+      }
+      100% {
+        transform: translate3d(0, 0, 0) scale(1);
+      }
+    }
+
+    .animate-blob {
+      animation: cxai-blob 12s ease-in-out infinite;
+      will-change: transform;
+    }
+
+    .animation-delay-2000 {
+      animation-delay: 2s;
+    }
+
+    .animation-delay-4000 {
+      animation-delay: 4s;
+    }
+
+    @keyframes cxai-gradient {
+      0% {
+        background-position: 0% 50%;
+      }
+      50% {
+        background-position: 100% 50%;
+      }
+      100% {
+        background-position: 0% 50%;
+      }
+    }
+
+    .cxai-gradient-motion {
+      background: radial-gradient(1200px 700px at 10% 0%, rgba(37, 99, 235, 0.16), transparent 60%),
+        radial-gradient(1000px 600px at 90% 10%, rgba(20, 184, 166, 0.12), transparent 60%),
+        radial-gradient(1000px 600px at 50% 100%, rgba(99, 102, 241, 0.10), transparent 60%),
+        linear-gradient(120deg, rgba(248, 250, 252, 1), rgba(239, 246, 255, 0.55), rgba(248, 250, 252, 1));
+      background-size: 200% 200%;
+      animation: cxai-gradient 18s ease-in-out infinite;
+      will-change: background-position;
     }
 
     /* Global Dark Mode Transitions */
@@ -97,13 +161,13 @@
     }
 
     ::-webkit-scrollbar-thumb {
-      background: #e11d48;
+      background: #2563EB;
       border-radius: 3px;
       opacity: 0.5;
     }
 
     .dark ::-webkit-scrollbar-thumb {
-      background: #fb7185;
+      background: #14B8A6;
     }
 
     @media print {
