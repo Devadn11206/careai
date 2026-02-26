@@ -614,20 +614,7 @@ Some ideas to enhance CareXAI:
 
 ---
 
-## 19. License
 
-Specify your license here. For example:
-
-```text
-MIT License
-
-Copyright (c) <year> <owner>
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-...
-```
-
-If you choose MIT, add a `LICENSE` file and update this section accordingly.
 
 ---
 
