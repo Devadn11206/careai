@@ -67,6 +67,8 @@ model User {
   timeSlots        TimeSlot[]       @relation("UserTimeSlots")
   sentMessages     ChatMessage[]    @relation("MessageSender")
   receivedMessages ChatMessage[]    @relation("MessageReceiver")
+  patientConsultationSummaries ConsultationSummary[] @relation("PatientConsultationSummaries")
+  doctorConsultationSummaries  ConsultationSummary[] @relation("DoctorConsultationSummaries")
 
   // Medication reminders
   medicationOrders           MedicationOrder[]          @relation("PatientMedicationOrders")
@@ -169,6 +171,7 @@ model Appointment {
   notes       String?
 
   chatMessages ChatMessage[] @relation("AppointmentMessages")
+  consultationSummaries ConsultationSummary[] @relation("AppointmentConsultationSummaries")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -222,4 +225,28 @@ model ChatMessage {
   @@index([appointmentId, createdAt])
   @@index([senderId, receiverId, createdAt])
   @@map("chat_messages")
+}
+
+model ConsultationSummary {
+  id            String      @id @default(cuid())
+  appointment   Appointment @relation("AppointmentConsultationSummaries", fields: [appointmentId], references: [id])
+  appointmentId String
+  patient       User        @relation("PatientConsultationSummaries", fields: [patientId], references: [id])
+  patientId     String
+  doctor        User        @relation("DoctorConsultationSummaries", fields: [doctorId], references: [id])
+  doctorId      String
+
+  transcript         String
+  symptoms           String
+  possibleCondition  String
+  keyDiscussionPoints String
+  recommendations    String
+  followUpInstructions String
+  rawJson            String
+  disclaimer         String?
+
+  createdAt DateTime @default(now())
+
+  @@index([doctorId, patientId, createdAt])
+  @@index([appointmentId, createdAt])
 }

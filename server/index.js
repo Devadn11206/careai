@@ -21,8 +21,9 @@ const PYTHON_RISK_SCRIPT = path.resolve(__dirname, '../../handrecognition/ml_ris
 const prisma = new PrismaClient();
 
 const app = express();
+// Support base64 chat attachments (images/docs/videos) without hitting tiny default body limits.
+app.use(express.json({ limit: '20mb' }));
 app.use(cors({ origin: '*', credentials: true }));
-app.use(express.json());
 
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
@@ -37,6 +38,35 @@ const JWT_SECRET = process.env.JWT_SECRET || 'dev-secret';
 // Agora configuration
 const AGORA_APP_ID = process.env.AGORA_APP_ID;
 const AGORA_APP_CERTIFICATE = process.env.AGORA_APP_CERTIFICATE;
+const GROQ_API_KEY = process.env.GROQ_API_KEY;
+const GROQ_MODEL = process.env.GROQ_MODEL || 'llama-3.3-70b-versatile';
+
+const userSocketIds = new Map();
+
+const markUserConnected = (userId, socketId) => {
+  const ids = userSocketIds.get(userId) || new Set();
+  const wasOffline = ids.size === 0;
+  ids.add(socketId);
+  userSocketIds.set(userId, ids);
+  return wasOffline;
+};
+
+const markUserDisconnected = (userId, socketId) => {
+  const ids = userSocketIds.get(userId);
+  if (!ids) return true;
+  ids.delete(socketId);
+  if (ids.size === 0) {
+    userSocketIds.delete(userId);
+    return true;
+  }
+  userSocketIds.set(userId, ids);
+  return false;
+};
+
+const isUserOnline = (userId) => {
+  const ids = userSocketIds.get(userId);
+  return !!ids && ids.size > 0;
+};
 
 // Single-owner admin configuration
 const OWNER_ADMIN_EMAIL = process.env.OWNER_ADMIN_EMAIL || 'ddnandu3@gmail.com';
@@ -132,6 +162,101 @@ const authMiddleware = async (req, res, next) => {
   } catch {
     return res.status(401).json({ error: 'Invalid token' });
   }
+};
+
+const ensureVerifiedDoctor = async (userId) => {
+  const doctor = await prisma.user.findUnique({ where: { id: userId } });
+  if (!doctor || doctor.role !== 'DOCTOR') {
+    return { ok: false, status: null };
+  }
+  const status = doctor.doctorStatus || 'PENDING';
+  return { ok: status === 'VERIFIED', status };
+};
+
+const extractJsonFromModelOutput = (rawText = '') => {
+  const trimmed = String(rawText || '').trim();
+  const withoutFence = trimmed
+    .replace(/^```json\s*/i, '')
+    .replace(/^```\s*/i, '')
+    .replace(/\s*```$/, '')
+    .trim();
+  const first = withoutFence.indexOf('{');
+  const last = withoutFence.lastIndexOf('}');
+  if (first >= 0 && last > first) {
+    return withoutFence.slice(first, last + 1);
+  }
+  return withoutFence;
+};
+
+const normalizeAiSummary = (parsed) => {
+  const toText = (v, fallback = '') => (typeof v === 'string' ? v.trim() : fallback);
+  const points = Array.isArray(parsed?.keyDiscussionPoints)
+    ? parsed.keyDiscussionPoints.map((p) => String(p || '').trim()).filter(Boolean)
+    : [];
+
+  return {
+    symptoms: toText(parsed?.symptoms, 'Not clearly stated in transcript.'),
+    possibleCondition: toText(parsed?.possibleCondition, 'Potential condition requires clinical evaluation.'),
+    keyDiscussionPoints: points,
+    recommendations: toText(parsed?.recommendations, 'Follow evidence-based care and clinician judgment.'),
+    followUpInstructions: toText(parsed?.followUpInstructions, 'Monitor symptoms and schedule follow-up as needed.'),
+  };
+};
+
+const generateMedicalSummaryFromTranscript = async (transcript) => {
+  if (!GROQ_API_KEY) {
+    throw new Error('GROQ_API_KEY is not configured on the server');
+  }
+
+  const systemPrompt = [
+    'You are an assistive clinical documentation AI for telehealth.',
+    'Return only valid JSON with this schema:',
+    '{',
+    '  "symptoms": "string",',
+    '  "possibleCondition": "string",',
+    '  "keyDiscussionPoints": ["string"],',
+    '  "recommendations": "string",',
+    '  "followUpInstructions": "string"',
+    '}',
+    'Rules:',
+    '- Do not provide a definitive diagnosis.',
+    '- Write concise and clinically neutral text.',
+    '- If information is missing, state uncertainty clearly.',
+    '- Never include markdown or code fences.',
+  ].join('\n');
+
+  const payload = {
+    model: GROQ_MODEL,
+    temperature: 0.2,
+    response_format: { type: 'json_object' },
+    messages: [
+      { role: 'system', content: systemPrompt },
+      {
+        role: 'user',
+        content: `Consultation transcript:\n${transcript}`,
+      },
+    ],
+  };
+
+  const resp = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      Authorization: `Bearer ${GROQ_API_KEY}`,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  const data = await resp.json().catch(() => ({}));
+  if (!resp.ok) {
+    const msg = data?.error?.message || 'Groq summarization failed';
+    throw new Error(msg);
+  }
+
+  const content = data?.choices?.[0]?.message?.content || '{}';
+  const jsonText = extractJsonFromModelOutput(content);
+  const parsed = JSON.parse(jsonText);
+  return normalizeAiSummary(parsed);
 };
 
 // --- Scheduling helpers ---
@@ -331,7 +456,13 @@ app.post('/auth/register', async (req, res) => {
     const token = generateToken(user);
     return res.status(201).json({
       token,
-      user: { id: user.id, name: user.name, email: user.email, role: user.role },
+      user: {
+        id: user.id,
+        name: user.name,
+        email: user.email,
+        role: user.role,
+        status: user.role === 'DOCTOR' ? (user.doctorStatus || 'PENDING') : null,
+      },
     });
   } catch (err) {
     console.error('Error in /auth/register', err);
@@ -350,7 +481,16 @@ app.post('/auth/login', async (req, res) => {
     return res.status(403).json({ error: 'Admin access is restricted to the owner account.' });
   }
   const token = generateToken(user);
-  return res.json({ token, user: { id: user.id, name: user.name, email: user.email, role: user.role } });
+  return res.json({
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      status: user.role === 'DOCTOR' ? (user.doctorStatus || 'PENDING') : null,
+    },
+  });
 });
 
 // Return the currently authenticated user based on JWT
@@ -364,11 +504,29 @@ app.get('/auth/me', authMiddleware, async (req, res) => {
     return res.status(403).json({ error: 'Admin access is restricted to the owner account.' });
   }
 
-  return res.json({ id: user.id, name: user.name, email: user.email, role: user.role });
+  return res.json({
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    role: user.role,
+    status: user.role === 'DOCTOR' ? (user.doctorStatus || 'PENDING') : null,
+  });
+});
+
+app.get('/presence/:userId', authMiddleware, async (req, res) => {
+  const { userId } = req.params;
+  return res.json({ userId, online: isUserOnline(userId) });
 });
 
 app.get('/appointments', authMiddleware, async (req, res) => {
   const { id, role } = req.user;
+  if (role === 'DOCTOR') {
+    const verification = await ensureVerifiedDoctor(id);
+    if (!verification.ok) {
+      return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+    }
+  }
+
   let where = {};
   if (role === 'PATIENT') where = { patientId: id };
   else if (role === 'DOCTOR') where = { doctorId: id };
@@ -403,7 +561,7 @@ app.post('/appointments', authMiddleware, async (req, res) => {
   const { id, role } = req.user;
   if (role !== 'PATIENT') return res.status(403).json({ error: 'Only patients can book' });
 
-  const { doctorId, date, time, type, consultationType, slotId: providedSlotId, symptoms } = req.body;
+  const { doctorId, date, time, type, consultationType, slotId: providedSlotId, symptoms, autoShare } = req.body;
   const doctor = await prisma.user.findUnique({ where: { id: doctorId } });
   if (!doctor || doctor.role !== 'DOCTOR') return res.status(400).json({ error: 'Invalid doctor' });
 
@@ -501,12 +659,113 @@ app.post('/appointments', authMiddleware, async (req, res) => {
   // Broadcast updated queue positions to all patients for this doctor + date
   await broadcastQueueSnapshot(doctorId, date);
 
+  const shapeChatMessage = (m) => ({
+    id: m.id,
+    appointmentId: m.appointmentId,
+    senderId: m.senderId,
+    senderRole: m.senderRole,
+    content: m.content,
+    timestamp: m.createdAt.toISOString(),
+    isRead: m.isRead,
+    attachmentUrl: m.attachmentUrl || undefined,
+    attachmentType: m.attachmentType || undefined,
+  });
+
+  if (autoShare && typeof autoShare === 'object') {
+    const currentVitals = autoShare.currentVitals && typeof autoShare.currentVitals === 'object'
+      ? autoShare.currentVitals
+      : {};
+    const riskSummary = autoShare.riskSummary && typeof autoShare.riskSummary === 'object'
+      ? autoShare.riskSummary
+      : {};
+    const healthPassport = autoShare.healthPassport && typeof autoShare.healthPassport === 'object'
+      ? autoShare.healthPassport
+      : {};
+    const vitalsTrend = Array.isArray(autoShare.vitalsTrend) ? autoShare.vitalsTrend.slice(-5) : [];
+    const documents = Array.isArray(autoShare.documents) ? autoShare.documents.slice(0, 10) : [];
+
+    const summaryLines = [
+      'AUTO-SHARED PATIENT SNAPSHOT',
+      `Booked appointment: ${date} ${time}`,
+      `Blood Group: ${healthPassport.bloodGroup || 'N/A'}`,
+      `Clinical Summary: ${healthPassport.clinicalSummary || 'Not provided'}`,
+      'Latest Vitals:',
+      `- BP: ${currentVitals.systolicBP || '--'}/${currentVitals.diastolicBP || '--'} mmHg`,
+      `- Glucose: ${currentVitals.glucose || '--'} mg/dL`,
+      `- BMI: ${currentVitals.bmi || '--'}`,
+      `- Cholesterol: ${currentVitals.cholesterol || '--'} mg/dL`,
+      'Risk Summary:',
+      `- Diabetes Risk: ${typeof riskSummary.diabetesRisk === 'number' ? riskSummary.diabetesRisk + '%' : 'N/A'}`,
+      `- Hypertension Risk: ${typeof riskSummary.hypertensionRisk === 'number' ? riskSummary.hypertensionRisk + '%' : 'N/A'}`,
+      `- Heart Disease Risk: ${typeof riskSummary.heartDiseaseRisk === 'number' ? riskSummary.heartDiseaseRisk + '%' : 'N/A'}`,
+      `Vitals Trend Points Shared: ${vitalsTrend.length}`,
+      `Documents Shared: ${documents.length}`,
+    ];
+
+    const summaryMessage = await prisma.chatMessage.create({
+      data: {
+        appointment: { connect: { id: appt.id } },
+        sender: { connect: { id: appt.patientId } },
+        receiver: { connect: { id: appt.doctorId } },
+        senderRole: 'PATIENT',
+        content: summaryLines.join('\n'),
+      },
+    });
+
+    io
+      .to(`user:${appt.patientId}`)
+      .to(`user:${appt.doctorId}`)
+      .to('role:ADMIN')
+      .emit('chat:message', shapeChatMessage(summaryMessage));
+
+    for (const doc of documents) {
+      const docName = doc && doc.name ? String(doc.name) : 'Unnamed document';
+      const docType = doc && doc.type ? String(doc.type) : 'unknown';
+      const docDate = doc && doc.date ? String(doc.date) : 'unknown date';
+      const docCategory = doc && doc.category ? String(doc.category) : 'General';
+      const docUrl = doc && typeof doc.url === 'string' ? doc.url : '';
+      const canAttachUrl = /^data:|^https?:\/\//i.test(docUrl);
+      const attachmentType = /^data:image\//i.test(docUrl)
+        ? 'image'
+        : /^data:video\//i.test(docUrl)
+          ? 'video'
+          : /^data:application\/pdf/i.test(docUrl)
+            ? 'pdf'
+            : 'file';
+
+      const docMessage = await prisma.chatMessage.create({
+        data: {
+          appointment: { connect: { id: appt.id } },
+          sender: { connect: { id: appt.patientId } },
+          receiver: { connect: { id: appt.doctorId } },
+          senderRole: 'PATIENT',
+          content: `DOCUMENT SHARED: ${docName} | Type: ${docType} | Category: ${docCategory} | Date: ${docDate}`,
+          attachmentUrl: canAttachUrl ? docUrl : null,
+          attachmentType: canAttachUrl ? attachmentType : null,
+        },
+      });
+
+      io
+        .to(`user:${appt.patientId}`)
+        .to(`user:${appt.doctorId}`)
+        .to('role:ADMIN')
+        .emit('chat:message', shapeChatMessage(docMessage));
+    }
+  }
+
   res.status(201).json(shaped);
 });
 
 // Update appointment status (e.g. doctor marks consultation started/completed)
 app.patch('/appointments/:id/status', authMiddleware, async (req, res) => {
   const { id: userId, role } = req.user;
+  if (role === 'DOCTOR') {
+    const verification = await ensureVerifiedDoctor(userId);
+    if (!verification.ok) {
+      return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+    }
+  }
+
   const { status } = req.body || {};
 
   if (!status || !['SCHEDULED', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED', 'PENDING', 'REJECTED'].includes(status)) {
@@ -556,6 +815,13 @@ app.patch('/appointments/:id/status', authMiddleware, async (req, res) => {
 // Save or update doctor consultation notes for an appointment
 app.patch('/appointments/:id/notes', authMiddleware, async (req, res) => {
   const { id: userId, role } = req.user;
+  if (role === 'DOCTOR') {
+    const verification = await ensureVerifiedDoctor(userId);
+    if (!verification.ok) {
+      return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+    }
+  }
+
   const { notes } = req.body || {};
 
   const appt = await prisma.appointment.findUnique({ where: { id: req.params.id } });
@@ -600,6 +866,11 @@ app.patch('/doctor/schedule', authMiddleware, async (req, res) => {
   const { id, role } = req.user;
   if (role !== 'DOCTOR') return res.status(403).json({ error: 'Only doctors can update schedule' });
 
+  const verification = await ensureVerifiedDoctor(id);
+  if (!verification.ok) {
+    return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+  }
+
   const { schedule, slotDuration, maxPatients } = req.body;
   if (!Array.isArray(schedule)) return res.status(400).json({ error: 'schedule must be an array' });
 
@@ -642,6 +913,11 @@ app.patch('/doctors/me', authMiddleware, async (req, res) => {
   const { id, role } = req.user;
   if (role !== 'DOCTOR') {
     return res.status(403).json({ error: 'Only doctors can update their profile' });
+  }
+
+  const verification = await ensureVerifiedDoctor(id);
+  if (!verification.ok) {
+    return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
   }
 
   const {
@@ -691,6 +967,14 @@ app.patch('/doctors/me', authMiddleware, async (req, res) => {
 
 // Slots for a doctor + date
 app.get('/doctors/:doctorId/slots', authMiddleware, async (req, res) => {
+  const { id, role } = req.user;
+  if (role === 'DOCTOR') {
+    const verification = await ensureVerifiedDoctor(id);
+    if (!verification.ok) {
+      return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+    }
+  }
+
   const { doctorId } = req.params;
   const { date } = req.query;
   if (!date || typeof date !== 'string') return res.status(400).json({ error: 'Missing date' });
@@ -706,6 +990,11 @@ app.get('/doctors/:doctorId/slots', authMiddleware, async (req, res) => {
 app.patch('/slots/:slotId/block', authMiddleware, async (req, res) => {
   const { id, role } = req.user;
   if (role !== 'DOCTOR') return res.status(403).json({ error: 'Only doctors can block slots' });
+
+  const verification = await ensureVerifiedDoctor(id);
+  if (!verification.ok) {
+    return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+  }
 
   const { slotId } = req.params;
   const { blocked } = req.body;
@@ -758,6 +1047,13 @@ app.patch('/slots/:slotId/block', authMiddleware, async (req, res) => {
 // Patient metrics (vitals history)
 app.get('/metrics', authMiddleware, async (req, res) => {
   const { id, role } = req.user;
+  if (role === 'DOCTOR') {
+    const verification = await ensureVerifiedDoctor(id);
+    if (!verification.ok) {
+      return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+    }
+  }
+
   const { patientId } = req.query;
 
   let targetId = id;
@@ -925,6 +1221,13 @@ app.post('/ai/health-risk', authMiddleware, async (req, res) => {
 // --- Chat messages ---
 app.get('/appointments/:appointmentId/chat', authMiddleware, async (req, res) => {
   const { id, role } = req.user;
+  if (role === 'DOCTOR') {
+    const verification = await ensureVerifiedDoctor(id);
+    if (!verification.ok) {
+      return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+    }
+  }
+
   const { appointmentId } = req.params;
 
   const appt = await prisma.appointment.findUnique({ where: { id: appointmentId } });
@@ -961,6 +1264,13 @@ app.get('/appointments/:appointmentId/chat', authMiddleware, async (req, res) =>
 
 app.post('/appointments/:appointmentId/chat', authMiddleware, async (req, res) => {
   const { id, role } = req.user;
+  if (role === 'DOCTOR') {
+    const verification = await ensureVerifiedDoctor(id);
+    if (!verification.ok) {
+      return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+    }
+  }
+
   const { appointmentId } = req.params;
   const { content, attachmentUrl, attachmentType } = req.body || {};
 
@@ -980,10 +1290,19 @@ app.post('/appointments/:appointmentId/chat', authMiddleware, async (req, res) =
     return res.status(403).json({ error: 'Chat access denied' });
   }
 
+  // ChatMessage schema requires explicit sender/receiver relations.
+  const receiverId =
+    id === appt.patientId
+      ? appt.doctorId
+      : id === appt.doctorId
+        ? appt.patientId
+        : appt.patientId;
+
   const msg = await prisma.chatMessage.create({
     data: {
-      appointmentId,
-      senderId: id,
+      appointment: { connect: { id: appointmentId } },
+      sender: { connect: { id } },
+      receiver: { connect: { id: receiverId } },
       senderRole: role,
       content: typeof content === 'string' ? content : '',
       attachmentUrl: attachmentUrl || null,
@@ -1013,6 +1332,140 @@ app.post('/appointments/:appointmentId/chat', authMiddleware, async (req, res) =
   res.status(201).json(shaped);
 });
 
+const shapeConsultationSummary = (row) => ({
+  id: row.id,
+  appointmentId: row.appointmentId,
+  patientId: row.patientId,
+  doctorId: row.doctorId,
+  transcript: row.transcript,
+  symptoms: row.symptoms,
+  possibleCondition: row.possibleCondition,
+  keyDiscussionPoints: JSON.parse(row.keyDiscussionPoints || '[]'),
+  recommendations: row.recommendations,
+  followUpInstructions: row.followUpInstructions,
+  disclaimer: row.disclaimer || undefined,
+  createdAt: row.createdAt.toISOString(),
+});
+
+app.post('/appointments/:appointmentId/ai-summary', authMiddleware, async (req, res) => {
+  const { id, role } = req.user;
+  if (role !== 'DOCTOR') {
+    return res.status(403).json({ error: 'Only doctors can generate consultation summaries' });
+  }
+
+  const verification = await ensureVerifiedDoctor(id);
+  if (!verification.ok) {
+    return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+  }
+
+  const { appointmentId } = req.params;
+  const { transcript } = req.body || {};
+
+  if (typeof transcript !== 'string' || transcript.trim().length < 20) {
+    return res.status(400).json({ error: 'Transcript is required and must be at least 20 characters' });
+  }
+
+  const appt = await prisma.appointment.findUnique({ where: { id: appointmentId } });
+  if (!appt) return res.status(404).json({ error: 'Appointment not found' });
+  if (appt.doctorId !== id) {
+    return res.status(403).json({ error: 'Only the assigned doctor can generate this summary' });
+  }
+
+  try {
+    const aiSummary = await generateMedicalSummaryFromTranscript(transcript.trim());
+
+    const created = await prisma.consultationSummary.create({
+      data: {
+        appointment: { connect: { id: appt.id } },
+        patient: { connect: { id: appt.patientId } },
+        doctor: { connect: { id: appt.doctorId } },
+        transcript: transcript.trim(),
+        symptoms: aiSummary.symptoms,
+        possibleCondition: aiSummary.possibleCondition,
+        keyDiscussionPoints: JSON.stringify(aiSummary.keyDiscussionPoints || []),
+        recommendations: aiSummary.recommendations,
+        followUpInstructions: aiSummary.followUpInstructions,
+        rawJson: JSON.stringify(aiSummary),
+        disclaimer: 'AI-generated assistive summary only. Not a medical diagnosis.',
+      },
+    });
+
+    return res.status(201).json(shapeConsultationSummary(created));
+  } catch (err) {
+    console.error('Failed to generate AI consultation summary', err);
+    return res.status(500).json({ error: err?.message || 'Failed to generate consultation summary' });
+  }
+});
+
+app.get('/appointments/:appointmentId/ai-summaries', authMiddleware, async (req, res) => {
+  const { id, role } = req.user;
+  if (role === 'DOCTOR') {
+    const verification = await ensureVerifiedDoctor(id);
+    if (!verification.ok) {
+      return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+    }
+  }
+
+  const { appointmentId } = req.params;
+  const appt = await prisma.appointment.findUnique({ where: { id: appointmentId } });
+  if (!appt) return res.status(404).json({ error: 'Appointment not found' });
+
+  const canAccess =
+    role === 'ADMIN' ||
+    (role === 'DOCTOR' && appt.doctorId === id) ||
+    (role === 'PATIENT' && appt.patientId === id);
+
+  if (!canAccess) {
+    return res.status(403).json({ error: 'Summary access denied' });
+  }
+
+  const rows = await prisma.consultationSummary.findMany({
+    where: { appointmentId },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  return res.json(rows.map(shapeConsultationSummary));
+});
+
+app.get('/patients/:patientId/ai-summaries', authMiddleware, async (req, res) => {
+  const { id, role } = req.user;
+  if (role !== 'DOCTOR') {
+    return res.status(403).json({ error: 'Only doctors can view patient consultation summaries' });
+  }
+
+  const verification = await ensureVerifiedDoctor(id);
+  if (!verification.ok) {
+    return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+  }
+
+  const { patientId } = req.params;
+  const rawLimit = Number(req.query.limit);
+  const limit = Number.isFinite(rawLimit) ? Math.max(1, Math.min(50, rawLimit)) : 10;
+
+  const hasRelationship = await prisma.appointment.findFirst({
+    where: {
+      doctorId: id,
+      patientId,
+    },
+    select: { id: true },
+  });
+
+  if (!hasRelationship) {
+    return res.status(403).json({ error: 'No appointment relationship with this patient' });
+  }
+
+  const rows = await prisma.consultationSummary.findMany({
+    where: {
+      doctorId: id,
+      patientId,
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  });
+
+  return res.json(rows.map(shapeConsultationSummary));
+});
+
 // --- Admin maintenance utilities ---
 // Clear all non-admin users and their related data (appointments, metrics, schedules, slots, chat).
 // This is protected so that only the owner admin account can trigger it.
@@ -1030,6 +1483,7 @@ app.post('/admin/clear-non-admin-users', authMiddleware, async (req, res) => {
   try {
     await prisma.$transaction(async (tx) => {
       // Delete dependent data first to satisfy foreign key constraints
+      await tx.consultationSummary.deleteMany({});
       await tx.chatMessage.deleteMany({});
       await tx.healthMetric.deleteMany({});
       await tx.appointment.deleteMany({});
@@ -1086,6 +1540,14 @@ app.patch('/admin/doctors/:id/status', authMiddleware, async (req, res) => {
 
 // --- Agora token generation endpoint ---
 app.post('/agora-token', authMiddleware, async (req, res) => {
+  const { id, role } = req.user;
+  if (role === 'DOCTOR') {
+    const verification = await ensureVerifiedDoctor(id);
+    if (!verification.ok) {
+      return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+    }
+  }
+
   const { channelName, uid } = req.body;
 
   if (!AGORA_APP_ID || !AGORA_APP_CERTIFICATE) {
@@ -1137,8 +1599,45 @@ io.on('connection', (socket) => {
   socket.join(`user:${id}`);
   socket.join(`role:${role}`);
 
+  const becameOnline = markUserConnected(id, socket.id);
+  if (becameOnline) {
+    io.emit('presence:update', { userId: id, online: true });
+  }
+
+  socket.on('chat:typing', async (payload = {}) => {
+    const { appointmentId, isTyping } = payload || {};
+    if (typeof appointmentId !== 'string' || typeof isTyping !== 'boolean') return;
+
+    try {
+      const appt = await prisma.appointment.findUnique({ where: { id: appointmentId } });
+      if (!appt) return;
+
+      const canChat =
+        role === 'ADMIN' ||
+        (role === 'PATIENT' && appt.patientId === id) ||
+        (role === 'DOCTOR' && appt.doctorId === id);
+
+      if (!canChat) return;
+
+      io
+        .to(`user:${appt.patientId}`)
+        .to(`user:${appt.doctorId}`)
+        .to('role:ADMIN')
+        .emit('chat:typing', {
+          appointmentId,
+          senderId: id,
+          isTyping,
+        });
+    } catch (err) {
+      console.error('Failed to process typing event', err);
+    }
+  });
+
   socket.on('disconnect', () => {
-    // No-op for now; could log presence
+    const becameOffline = markUserDisconnected(id, socket.id);
+    if (becameOffline) {
+      io.emit('presence:update', { userId: id, online: false });
+    }
   });
 });
 

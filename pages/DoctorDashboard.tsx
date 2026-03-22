@@ -1,6 +1,6 @@
 
 import React, { useMemo, useState, useEffect } from 'react';
-import { DoctorProfile, PatientProfile, DaySchedule, Appointment, UserRole, DoctorAnalytics, TimeSlot, HealthPassportData, Medication, MedicationFrequency, MedicationMissedDoseAlert, Document, HealthMetrics, PrescriptionOcrResult, PrescriptionMedicine, ChatEmergencyAlert } from '../types';
+import { DoctorProfile, PatientProfile, DaySchedule, Appointment, UserRole, DoctorAnalytics, TimeSlot, HealthPassportData, Medication, MedicationFrequency, MedicationMissedDoseAlert, Document, HealthMetrics, PrescriptionOcrResult, PrescriptionMedicine, ChatEmergencyAlert, ConsultationSummary } from '../types';
 import { MockBackend } from '../services/mockBackend';
 import { BackendAPI } from '../services/apiClient';
 import type { QueueUpdate } from '../services/apiClient';
@@ -19,7 +19,7 @@ interface Props {
 }
 
 type ViewMode = 'dashboard' | 'patients' | 'schedule' | 'settings' | 'analytics';
-type PatientTab = 'OVERVIEW' | 'HISTORY' | 'MEDS' | 'DOCUMENTS' | 'NOTES';
+type PatientTab = 'OVERVIEW' | 'HISTORY' | 'MEDS' | 'DOCUMENTS' | 'SUMMARIES' | 'NOTES';
 
 const getDefaultSchedule = (): DaySchedule[] => [
     { day: 'Mon', available: true, startTime: '09:00', endTime: '17:00' },
@@ -32,6 +32,17 @@ const getDefaultSchedule = (): DaySchedule[] => [
 ];
 
 export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
+    const emptyAnalytics: DoctorAnalytics = {
+        totalPatients: 0,
+        appointmentsToday: 0,
+        pendingRequests: 0,
+        averageRating: 0,
+        completionRate: 0,
+        patientTrends: [],
+        appointmentDistribution: [],
+        feedbackKeywords: [],
+    };
+
     const [user, setUser] = useState<DoctorProfile>(initialUser);
     const [patients, setPatients] = useState<PatientProfile[]>([]);
     const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -53,6 +64,7 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
         disclaimer?: string;
     } | null>(null);
     const [patientDocs, setPatientDocs] = useState<Document[]>([]);
+    const [consultationSummariesByPatientId, setConsultationSummariesByPatientId] = useState<Record<string, ConsultationSummary[]>>({});
 
     const [manageDate, setManageDate] = useState(new Date().toISOString().split('T')[0]);
     const [dailySlots, setDailySlots] = useState<TimeSlot[]>([]);
@@ -265,9 +277,9 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
             }
 
             const [assignedPatients, appts, stats] = await Promise.all([
-                MockBackend.getAssignedPatients(effectiveUser.id),
-                BackendAPI.getAppointments(),
-                MockBackend.getDoctorAnalytics(effectiveUser.id)
+                MockBackend.getAssignedPatients(effectiveUser.id).catch(() => []),
+                BackendAPI.getAppointments().catch(() => []),
+                MockBackend.getDoctorAnalytics(effectiveUser.id).catch(() => emptyAnalytics)
             ]);
 
             // Ensure any patient who has an appointment with this doctor
@@ -298,8 +310,25 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
             setAppointments(appts);
             setAnalytics(stats);
 
+            const uniquePatientIds = Array.from(new Set(appts.map(a => a.patientId).filter(Boolean)));
+            if (uniquePatientIds.length > 0) {
+                const summaryPairs = await Promise.all(
+                    uniquePatientIds.map(async (patientId) => {
+                        const list = await BackendAPI.getPatientConsultationSummaries(patientId, 3).catch(() => []);
+                        return [patientId, list] as const;
+                    })
+                );
+                setConsultationSummariesByPatientId(prev => {
+                    const next = { ...prev };
+                    summaryPairs.forEach(([patientId, list]) => {
+                        next[patientId] = list;
+                    });
+                    return next;
+                });
+            }
+
             if (viewMode === 'schedule') {
-                const slots = await BackendAPI.getDoctorSlots(effectiveUser.id, manageDate);
+                const slots = await BackendAPI.getDoctorSlots(effectiveUser.id, manageDate).catch(() => []);
                 setDailySlots(slots);
             }
 
@@ -308,16 +337,18 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                 const updatedProfile = mergedPatients.find(p => p.id === selectedPatient.id) || selectedPatient;
                 if (updatedProfile) setSelectedPatient(updatedProfile);
 
-                const [hist, meds, docs] = await Promise.all([
-                    BackendAPI.getMyMetrics(selectedPatient.id),
+                const [hist, meds, docs, summaries] = await Promise.all([
+                    BackendAPI.getMyMetrics(selectedPatient.id).catch(() => []),
                     BackendAPI.getMedicationOrders({ patientId: selectedPatient.id, active: 'true' }).catch(() => (
                         MockBackend.getMedications(selectedPatient.id)
                     )),
-                    MockBackend.getPatientDocuments(selectedPatient.id)
+                    MockBackend.getPatientDocuments(selectedPatient.id).catch(() => []),
+                    BackendAPI.getPatientConsultationSummaries(selectedPatient.id, 25).catch(() => []),
                 ]);
                 setPatientHistory(hist);
                 setPatientMeds(meds);
                 setPatientDocs(docs);
+                setConsultationSummariesByPatientId(prev => ({ ...prev, [selectedPatient.id]: summaries }));
             }
         };
 
@@ -336,7 +367,18 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
             });
         };
 
-        const unsubscribeAppt = BackendAPI.onAppointmentCreated(upsertAppointment);
+        const hydrateSummaryPreview = (patientId: string) => {
+            BackendAPI.getPatientConsultationSummaries(patientId, 3)
+                .then((list) => {
+                    setConsultationSummariesByPatientId(prev => ({ ...prev, [patientId]: list }));
+                })
+                .catch(() => {});
+        };
+
+        const unsubscribeAppt = BackendAPI.onAppointmentCreated((appt) => {
+            upsertAppointment(appt);
+            hydrateSummaryPreview(appt.patientId);
+        });
 
         const unsubscribeQueue = BackendAPI.onQueueUpdate((payload) => {
             if (payload.doctorId !== user.id) return;
@@ -361,7 +403,10 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
             });
         });
 
-        const unsubscribeApptUpdated = BackendAPI.onAppointmentUpdated(upsertAppointment);
+        const unsubscribeApptUpdated = BackendAPI.onAppointmentUpdated((appt) => {
+            upsertAppointment(appt);
+            hydrateSummaryPreview(appt.patientId);
+        });
 
         return () => {
             unsubscribeMock();
@@ -776,6 +821,10 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
 
         // Determine next patient
         const nextAppt = activeQueue.find(a => a.status === 'IN_PROGRESS') || activeQueue[0];
+        const summaryCandidates = nextAppt ? (consultationSummariesByPatientId[nextAppt.patientId] || []) : [];
+        const quickSummary = nextAppt
+            ? (summaryCandidates.find(s => s.appointmentId !== nextAppt.id) || summaryCandidates[0] || null)
+            : null;
 
         return (
             <>
@@ -829,6 +878,16 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                             <p className="text-4xl font-black">#{nextAppt.tokenNumber || 1}</p>
                                         </div>
                                     </div>
+
+                                        {quickSummary && (
+                                            <div className="mb-6 rounded-2xl bg-white/10 border border-white/20 p-4 max-w-3xl">
+                                                <p className="text-[10px] uppercase tracking-wider font-bold text-indigo-100 mb-2">Previous Visit Summary</p>
+                                                <p className="text-xs text-indigo-50"><span className="font-semibold">Symptoms:</span> {quickSummary.symptoms}</p>
+                                                <p className="text-xs text-indigo-50 mt-1"><span className="font-semibold">Possible condition:</span> {quickSummary.possibleCondition}</p>
+                                                <p className="text-xs text-indigo-50 mt-1"><span className="font-semibold">Recommendations:</span> {quickSummary.recommendations}</p>
+                                                <p className="text-[10px] text-indigo-200 mt-2">Assistive AI summary only. Not a medical diagnosis.</p>
+                                            </div>
+                                        )}
 
                                         <div className="flex flex-wrap gap-4">
                                         {nextAppt.status !== 'IN_PROGRESS' && nextAppt.status !== 'COMPLETED' && (
@@ -1016,6 +1075,7 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                 <VideoCall
                     appointmentId={videoAppointment.id}
                     otherUserName={videoAppointment.patientName}
+                    currentUserRole={UserRole.DOCTOR}
                     onClose={() => {
                         setShowVideoCall(false);
                         setVideoAppointment(null);
@@ -1365,7 +1425,7 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
 
                 {/* Tabs */}
                 <div className="flex border-b border-slate-200 dark:border-slate-700 overflow-x-auto">
-                    {(['OVERVIEW', 'HISTORY', 'MEDS', 'DOCUMENTS', 'NOTES'] as PatientTab[]).map(tab => (
+                    {(['OVERVIEW', 'HISTORY', 'MEDS', 'DOCUMENTS', 'SUMMARIES', 'NOTES'] as PatientTab[]).map(tab => (
                         <button
                             key={tab}
                             onClick={() => setPatientTab(tab)}
@@ -1953,6 +2013,41 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                         </Card>
                     )}
 
+                    {patientTab === 'SUMMARIES' && (
+                        <Card title="Consultation Summary History" className="mt-6">
+                            {(() => {
+                                const history = consultationSummariesByPatientId[selectedPatient.id] || [];
+                                if (history.length === 0) {
+                                    return <p className="text-slate-400 italic">No AI consultation summaries available yet.</p>;
+                                }
+
+                                return (
+                                    <div className="space-y-3">
+                                        {history.map((summary) => (
+                                            <details key={summary.id} className="rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800/50 p-4">
+                                                <summary className="cursor-pointer list-none">
+                                                    <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-2">
+                                                        <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{new Date(summary.createdAt).toLocaleString()}</p>
+                                                        <p className="text-xs text-slate-500">Appointment: {summary.appointmentId}</p>
+                                                    </div>
+                                                    <p className="text-xs text-slate-600 dark:text-slate-300 mt-2"><span className="font-semibold">Preview:</span> {summary.symptoms}</p>
+                                                </summary>
+                                                <div className="mt-3 space-y-2 text-xs text-slate-700 dark:text-slate-200">
+                                                    <p><span className="font-semibold">Symptoms:</span> {summary.symptoms}</p>
+                                                    <p><span className="font-semibold">Possible condition:</span> {summary.possibleCondition}</p>
+                                                    <p><span className="font-semibold">Key discussion points:</span> {(summary.keyDiscussionPoints || []).join('; ') || 'N/A'}</p>
+                                                    <p><span className="font-semibold">Doctor recommendations:</span> {summary.recommendations}</p>
+                                                    <p><span className="font-semibold">Follow-up instructions:</span> {summary.followUpInstructions}</p>
+                                                    <p className="text-[10px] text-amber-600">AI-generated assistive summary only. Not a medical diagnosis.</p>
+                                                </div>
+                                            </details>
+                                        ))}
+                                    </div>
+                                );
+                            })()}
+                        </Card>
+                    )}
+
                     {patientTab === 'NOTES' && (
                         <Card title="Clinical Notes" className="mt-6">
                             <textarea
@@ -1986,15 +2081,24 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
 
     // --- MAIN RENDER ---
 
-    const effectiveStatus = user.status;
-    const isVerifiedUser = effectiveStatus ? effectiveStatus === 'VERIFIED' : true; // Backend-only doctors have no status field
+    const effectiveStatus = user.status || 'PENDING';
+    const isVerifiedUser = effectiveStatus === 'VERIFIED';
 
     if (!isVerifiedUser) {
         return (
             <div className="h-screen flex items-center justify-center p-6 text-center">
                 <Card className="max-w-md w-full">
-                    <h2 className="text-2xl font-bold mb-2">Account Pending</h2>
-                    <p className="text-slate-500">Your doctor account is currently under verification.</p>
+                    <h2 className="text-2xl font-bold mb-2">
+                        {effectiveStatus === 'REJECTED' ? 'Account Not Approved' : 'Account Pending'}
+                    </h2>
+                    <p className="text-slate-500">
+                        {effectiveStatus === 'REJECTED'
+                            ? 'Your doctor account was not approved yet. Please contact admin support.'
+                            : 'Your doctor account is pending admin verification. You will gain full access once approved.'}
+                    </p>
+                    <div className="mt-3 inline-flex items-center rounded-full px-3 py-1 text-xs font-bold bg-amber-100 text-amber-800">
+                        Status: {effectiveStatus}
+                    </div>
                 </Card>
             </div>
         );
@@ -2002,6 +2106,11 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
 
     return (
         <div className="h-full relative p-4 md:p-8">
+            <div className="mb-4 flex items-center justify-end">
+                <span className="inline-flex items-center rounded-full px-3 py-1 text-xs font-bold bg-emerald-100 text-emerald-800">
+                    Approval Status: {effectiveStatus}
+                </span>
+            </div>
             {emergencyAlerts.length > 0 && (
                 <div className="fixed top-4 right-4 z-[130] space-y-3 w-80">
                     {emergencyAlerts.map((a) => (
@@ -2025,7 +2134,7 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                 A patient in an active chat reported possible emergency symptoms.
                             </p>
                             <p className="text-[10px] text-red-700 font-semibold">
-                                Keywords: {a.keywords.join(', ')}
+                                Keywords: {Array.isArray(a.keywords) && a.keywords.length > 0 ? a.keywords.join(', ') : 'Not available'}
                             </p>
                             {/* Chat navigation disabled; show info only */}
                         </div>

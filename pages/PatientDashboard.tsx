@@ -8,6 +8,7 @@ import { MockBackend } from '../services/mockBackend';
 import { BackendAPI, BackendDoctor, QueueUpdate } from '../services/apiClient';
 import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
+import type { Variants } from 'framer-motion';
 import { MedicalChatbot } from '../components/MedicalChatbot';
 import { ChatSystem } from '../components/ChatSystem';
 import { HealthRiskPredictionModule } from '../components/HealthRiskPredictionModule';
@@ -23,7 +24,7 @@ interface Props {
 const IS_DEMO_MODE = (import.meta as any).env.DEV === true;
 
 // Animation Variants
-const containerVariants = {
+const containerVariants: Variants = {
     hidden: { opacity: 0 },
     visible: {
         opacity: 1,
@@ -33,7 +34,7 @@ const containerVariants = {
     }
 };
 
-const itemVariants = {
+const itemVariants: Variants = {
     hidden: { opacity: 0, y: 20 },
     visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 100 } }
 };
@@ -295,6 +296,42 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
             if (!slot) throw new Error('Selected slot not available.');
 
             const consultationType = bookingType.toLowerCase().includes('video') ? 'VIDEO' : 'IN_PERSON';
+            const latestVitals = history.length > 0 ? history[history.length - 1] : metrics;
+            const autoShare = {
+                currentVitals: {
+                    systolicBP: latestVitals?.systolicBP,
+                    diastolicBP: latestVitals?.diastolicBP,
+                    glucose: latestVitals?.glucose,
+                    bmi: latestVitals?.bmi,
+                    cholesterol: latestVitals?.cholesterol,
+                    timestamp: latestVitals?.timestamp,
+                },
+                vitalsTrend: history.slice(-5).map(h => ({
+                    timestamp: h.timestamp,
+                    systolicBP: h.systolicBP,
+                    diastolicBP: h.diastolicBP,
+                    glucose: h.glucose,
+                    bmi: h.bmi,
+                    cholesterol: h.cholesterol,
+                })),
+                healthPassport: {
+                    generatedDate: passportData?.generatedDate,
+                    bloodGroup: passportData?.bloodGroup || user.bloodGroup || 'N/A',
+                    clinicalSummary: passportData?.clinicalSummary || 'Auto-shared at booking from patient dashboard.',
+                },
+                riskSummary: aiResult ? {
+                    diabetesRisk: aiResult.diabetesRisk,
+                    hypertensionRisk: aiResult.hypertensionRisk,
+                    heartDiseaseRisk: aiResult.heartDiseaseRisk,
+                } : undefined,
+                documents: documents.slice(-10).map(doc => ({
+                    name: doc.name,
+                    type: doc.type,
+                    date: doc.date,
+                    url: doc.url,
+                    category: doc.category,
+                })),
+            };
 
             const appt = await BackendAPI.createAppointment({
                 doctorId: selectedDoctorId,
@@ -304,6 +341,7 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                 consultationType,
                 slotId: slot.id,
                 symptoms: bookingSymptoms,
+                autoShare,
             });
 
             // Optimistically update list; realtime will also broadcast
@@ -802,8 +840,8 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
 
             {/* Assistants */}
             <MedicalChatbot />
-            {activeVideoCall && <VideoCall appointmentId={activeVideoCall.id} otherUserName={activeVideoCall.doctorName} onClose={() => setActiveVideoCall(null)} />}
-            {activeChatAppt && <ChatSystem currentUserId={user.id} currentUserRole={UserRole.PATIENT} appointmentId={activeChatAppt.id} otherUserName={activeChatAppt.doctorName} onClose={() => setActiveChatAppt(null)} />}
+            {activeVideoCall && <VideoCall appointmentId={activeVideoCall.id} otherUserName={activeVideoCall.doctorName} currentUserRole={UserRole.PATIENT} onClose={() => setActiveVideoCall(null)} />}
+            {activeChatAppt && <ChatSystem currentUserId={user.id} currentUserRole={UserRole.PATIENT} appointmentId={activeChatAppt.id} otherUserId={activeChatAppt.doctorId} otherUserName={activeChatAppt.doctorName} onClose={() => setActiveChatAppt(null)} />}
         </motion.div >
     );
 };

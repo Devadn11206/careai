@@ -1,5 +1,16 @@
 import { io, Socket } from 'socket.io-client';
-import { AIAnalysisResult, Appointment, ChatMessage, DoctorStatus, HealthMetrics, TimeSlot, UserRole } from '../types';
+import {
+  AIAnalysisResult,
+  Appointment,
+  ChatMessage,
+  ConsultationSummary,
+  DoctorStatus,
+  HealthMetrics,
+  PresenceUpdate,
+  TimeSlot,
+  TypingEvent,
+  UserRole,
+} from '../types';
 
 const API_BASE = (import.meta as any).env.VITE_API_BASE_URL || 'http://localhost:4000';
 // Warn if a production build accidentally points to localhost
@@ -47,7 +58,11 @@ const ensureSocket = (): Socket | null => {
   socket = io(API_BASE, {
     auth: { token },
     autoConnect: true,
-    transports: ['websocket'],
+    transports: ['websocket', 'polling'],
+    reconnection: true,
+    reconnectionAttempts: Infinity,
+    reconnectionDelay: 1000,
+    timeout: 10000,
   });
 
   return socket;
@@ -78,6 +93,7 @@ export interface LoginResponseUser {
   name: string;
   email: string;
   role: UserRole;
+  status?: DoctorStatus | null;
 }
 
 interface LoginResponse {
@@ -110,6 +126,42 @@ export interface BackendDoctor {
   hasSchedule?: boolean;
   totalSlots?: number;
   openSlots?: number;
+}
+
+export interface AppointmentAutoSharePayload {
+  currentVitals?: {
+    systolicBP?: number;
+    diastolicBP?: number;
+    glucose?: number;
+    bmi?: number;
+    cholesterol?: number;
+    timestamp?: string;
+  };
+  vitalsTrend?: Array<{
+    timestamp?: string;
+    systolicBP?: number;
+    diastolicBP?: number;
+    glucose?: number;
+    bmi?: number;
+    cholesterol?: number;
+  }>;
+  healthPassport?: {
+    generatedDate?: string;
+    bloodGroup?: string;
+    clinicalSummary?: string;
+  };
+  riskSummary?: {
+    diabetesRisk?: number;
+    hypertensionRisk?: number;
+    heartDiseaseRisk?: number;
+  };
+  documents?: Array<{
+    name?: string;
+    type?: string;
+    date?: string;
+    url?: string;
+    category?: string;
+  }>;
 }
 
 export const BackendAPI = {
@@ -184,6 +236,7 @@ export const BackendAPI = {
     consultationType: 'VIDEO' | 'IN_PERSON';
     slotId?: string;
     symptoms?: string;
+    autoShare?: AppointmentAutoSharePayload;
   }): Promise<Appointment> {
     return api<Appointment>('/appointments', {
       method: 'POST',
@@ -261,12 +314,41 @@ export const BackendAPI = {
     appointmentId: string;
     content: string;
     attachmentUrl?: string;
-    attachmentType?: 'image' | 'pdf';
+    attachmentType?: 'image' | 'pdf' | 'video' | 'file';
   }): Promise<ChatMessage> {
     const { appointmentId, ...body } = input;
     return api<ChatMessage>(`/appointments/${appointmentId}/chat`, {
       method: 'POST',
       body: JSON.stringify(body),
+    });
+  },
+
+  async getPresence(userId: string): Promise<{ userId: string; online: boolean }> {
+    return api<{ userId: string; online: boolean }>(`/presence/${encodeURIComponent(userId)}`, { method: 'GET' });
+  },
+
+  async getAgoraToken(input: { channelName: string; uid: number }): Promise<{ token: string }> {
+    return api<{ token: string }>('/agora-token', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async generateConsultationSummary(input: { appointmentId: string; transcript: string }): Promise<ConsultationSummary> {
+    const { appointmentId, transcript } = input;
+    return api<ConsultationSummary>(`/appointments/${appointmentId}/ai-summary`, {
+      method: 'POST',
+      body: JSON.stringify({ transcript }),
+    });
+  },
+
+  async getAppointmentConsultationSummaries(appointmentId: string): Promise<ConsultationSummary[]> {
+    return api<ConsultationSummary[]>(`/appointments/${appointmentId}/ai-summaries`, { method: 'GET' });
+  },
+
+  async getPatientConsultationSummaries(patientId: string, limit = 10): Promise<ConsultationSummary[]> {
+    return api<ConsultationSummary[]>(`/patients/${encodeURIComponent(patientId)}/ai-summaries?limit=${encodeURIComponent(String(limit))}`, {
+      method: 'GET',
     });
   },
 
@@ -310,6 +392,24 @@ export const BackendAPI = {
     };
   },
 
+  onPresenceUpdate(handler: (event: PresenceUpdate) => void): () => void {
+    const s = ensureSocket();
+    if (!s) return () => { };
+    s.on('presence:update', handler);
+    return () => {
+      s.off('presence:update', handler);
+    };
+  },
+
+  onTyping(handler: (event: TypingEvent) => void): () => void {
+    const s = ensureSocket();
+    if (!s) return () => { };
+    s.on('chat:typing', handler);
+    return () => {
+      s.off('chat:typing', handler);
+    };
+  },
+
   onDoctorUpdated(handler: (doctor: BackendDoctor) => void): () => void {
     const s = ensureSocket();
     if (!s) return () => { };
@@ -325,6 +425,15 @@ export const BackendAPI = {
     s.on('queue:update', handler);
     return () => {
       s.off('queue:update', handler);
+    };
+  },
+
+  onChatEmergency(handler: (alert: { doctorId: string; messageId: string; keywords: string[] }) => void): () => void {
+    const s = ensureSocket();
+    if (!s) return () => { };
+    s.on('chat:emergency', handler as any);
+    return () => {
+      s.off('chat:emergency', handler as any);
     };
   },
 };

@@ -1,12 +1,10 @@
 import React, { useEffect, useRef, useState } from 'react';
-import { Send, Paperclip, ShieldCheck, Globe, Loader2 } from 'lucide-react';
+import { Send, Paperclip, ShieldCheck, Globe, Loader2, Smile, X } from 'lucide-react';
 import type { TeleUser, TeleChatMessage } from './telechatTypes';
 import { translateTelechatMessage } from '../../services/telechatTranslationService';
 import { BackendAPI } from '../../services/apiClient';
 import type { ChatMessage, TypingEvent } from '../../types';
 import { ConsultationShell } from '../consultation/ConsultationShell';
-import { ConsultationIconButton } from '../consultation/ConsultationIconButton';
-import { ConsultationMessageBubble } from '../consultation/ConsultationMessageBubble';
 
 interface ChatPanelProps {
   currentUser: TeleUser;
@@ -20,6 +18,8 @@ const SUPPORTED_LANGUAGES = [
   { code: 'fr', name: 'Français', flag: '🇫🇷' },
   { code: 'zh', name: '中文', flag: '🇨🇳' },
 ];
+
+const QUICK_EMOJIS = ['😀', '😂', '😍', '🙏', '👍', '👏', '❤️', '🤒', '😷', '✅', '📄', '💊'];
 
 export const ChatPanel: React.FC<ChatPanelProps> = ({ currentUser, appointmentId, onClose }) => {
   const [messages, setMessages] = useState<TeleChatMessage[]>(() => {
@@ -42,6 +42,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ currentUser, appointmentId
   const [currentLang, setCurrentLang] = useState('en');
   const [showLangMenu, setShowLangMenu] = useState(false);
   const [translatingIds, setTranslatingIds] = useState<Set<string>>(new Set());
+  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
 
   const [accessError, setAccessError] = useState<string | null>(null);
 
@@ -107,7 +108,14 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ currentUser, appointmentId
         isRead: msg.isRead,
         attachment: msg.attachmentUrl
           ? {
-              name: msg.attachmentType === 'image' ? 'Image' : 'Document',
+              name:
+                msg.attachmentType === 'image'
+                  ? 'Image'
+                  : msg.attachmentType === 'video'
+                    ? 'Video'
+                    : msg.attachmentType === 'pdf'
+                      ? 'PDF'
+                      : 'File',
               type: msg.attachmentType || 'file',
               url: msg.attachmentUrl,
             }
@@ -185,7 +193,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ currentUser, appointmentId
     setIsUploading(true);
     try {
       let attachmentUrl: string | undefined;
-      let attachmentType: 'image' | 'pdf' | undefined;
+      let attachmentType: 'image' | 'pdf' | 'video' | 'file' | undefined;
 
       if (selectedFile) {
         attachmentUrl = await new Promise<string>((resolve) => {
@@ -193,7 +201,10 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ currentUser, appointmentId
           reader.onloadend = () => resolve(reader.result as string);
           reader.readAsDataURL(selectedFile);
         });
-        attachmentType = selectedFile.type.startsWith('image/') ? 'image' : 'pdf';
+        if (selectedFile.type.startsWith('image/')) attachmentType = 'image';
+        else if (selectedFile.type.startsWith('video/')) attachmentType = 'video';
+        else if (selectedFile.type === 'application/pdf') attachmentType = 'pdf';
+        else attachmentType = 'file';
       }
 
       await BackendAPI.sendChatMessage({
@@ -225,12 +236,26 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ currentUser, appointmentId
     if (e.target.files && e.target.files[0]) setSelectedFile(e.target.files[0]);
   };
 
+  const appendEmoji = (emoji: string) => {
+    setInputText((prev) => `${prev}${emoji}`);
+  };
+
+  const formatTs = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
   return (
     <ConsultationShell
-      title={
-        <span className="inline-flex items-center gap-2">
-          Secure Consultation Chat
-          <span
+      title="Secure Consultation Chat"
+      subtitle={
+        <span className="inline-flex items-center gap-1">
+          <ShieldCheck size={12} className="text-rose-600" />
+          Encrypted • For clinical use
+        </span>
+      }
+      onClose={onClose}
+      maxWidthClassName="max-w-3xl"
+      headerRight={
+        <div className="relative text-xs">
+          <div
             className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
               connectionStatus === 'connected'
                 ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/20 dark:text-rose-200 dark:border-rose-800/40'
@@ -243,19 +268,7 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ currentUser, appointmentId
               }`}
             />
             {connectionStatus === 'connected' ? 'Connected' : 'Offline'}
-          </span>
-        </span>
-      }
-      subtitle={
-        <span className="inline-flex items-center gap-1">
-          <ShieldCheck size={12} className="text-rose-600" />
-          Encrypted • For clinical use
-        </span>
-      }
-      onClose={onClose}
-      maxWidthClassName="max-w-3xl"
-      headerRight={
-        <div className="relative text-xs">
+          </div>
           <button
             type="button"
             onClick={() => setShowLangMenu((v) => !v)}
@@ -286,61 +299,142 @@ export const ChatPanel: React.FC<ChatPanelProps> = ({ currentUser, appointmentId
         </div>
       }
       footer={
-        <div className="p-3">
+        <div className="p-2 bg-[#f0f2f5] dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 relative">
+          {showEmojiPicker && (
+            <div className="absolute bottom-[64px] left-2 right-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-xl z-20">
+              <div className="flex flex-wrap gap-1">
+                {QUICK_EMOJIS.map((emoji) => (
+                  <button
+                    key={emoji}
+                    type="button"
+                    onClick={() => appendEmoji(emoji)}
+                    className="text-lg px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
+                  >
+                    {emoji}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
+
           <div className="flex items-end gap-2">
-            <label className="shrink-0">
-              <ConsultationIconButton variant="outline" className="cursor-pointer" aria-label="Attach file">
-                <Paperclip size={16} />
-              </ConsultationIconButton>
-              <input type="file" className="hidden" onChange={handleFileSelect} />
+            <label className="shrink-0 w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center cursor-pointer text-slate-500 hover:text-slate-700">
+              <Paperclip size={16} />
+              <input type="file" className="hidden" onChange={handleFileSelect} accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" />
             </label>
 
-            <div className="flex-1">
-              <input
-                type="text"
+            <button
+              type="button"
+              onClick={() => setShowEmojiPicker((prev) => !prev)}
+              className="shrink-0 w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-700"
+              aria-label="Emoji"
+            >
+              <Smile size={16} />
+            </button>
+
+            <div className="flex-1 rounded-3xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-2">
+              <textarea
                 value={inputText}
-                onChange={handleInputChange}
-                placeholder="Type a message about symptoms, reports, or questions…"
-                className="w-full text-[12px] px-4 py-2.5 rounded-2xl border border-slate-200 dark:border-slate-700 bg-slate-50 dark:bg-slate-900 text-slate-800 dark:text-slate-100 outline-none focus:ring-2 focus:ring-rose-500"
+                onChange={(e) => {
+                  setInputText(e.target.value);
+                  notifyTyping(true);
+                }}
+                onBlur={() => notifyTyping(false)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' && !e.shiftKey) {
+                    e.preventDefault();
+                    handleSend();
+                  }
+                }}
+                placeholder="Type a message..."
+                className="w-full text-[13px] bg-transparent text-slate-800 dark:text-slate-100 outline-none resize-none min-h-[24px] max-h-24"
+                rows={1}
               />
               {selectedFile && (
-                <div className="mt-1 text-[10px] text-slate-500 dark:text-slate-300 font-semibold truncate">
-                  Attached: {selectedFile.name}
+                <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-slate-300">
+                  <span className="truncate">Attached: {selectedFile.name}</span>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedFile(null)}
+                    className="w-5 h-5 rounded-full flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700"
+                    aria-label="Remove attachment"
+                  >
+                    <X size={12} />
+                  </button>
                 </div>
               )}
             </div>
 
-            <ConsultationIconButton
-              variant="primary"
+            <button
+              type="button"
               onClick={handleSend}
-              disabled={connectionStatus === 'disconnected' || isUploading}
+              disabled={connectionStatus === 'disconnected' || isUploading || (!inputText.trim() && !selectedFile)}
+              className="shrink-0 w-10 h-10 rounded-full bg-[#2563eb] text-white flex items-center justify-center disabled:opacity-50"
               aria-label="Send message"
             >
               {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send size={16} />}
-            </ConsultationIconButton>
+            </button>
           </div>
         </div>
       }
     >
-      <div ref={scrollRef} className="h-full overflow-y-auto p-4 space-y-3 bg-slate-50 dark:bg-slate-950/40">
+      <div
+        ref={scrollRef}
+        className="h-full overflow-y-auto p-4 space-y-3"
+        style={{
+          backgroundColor: '#efeae2',
+          backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")',
+          backgroundSize: '400px',
+        }}
+      >
         {accessError && (
-          <ConsultationMessageBubble align="center" variant="system" text={accessError} />
+          <div className="flex justify-center">
+            <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl px-3 py-2 max-w-[90%]">{accessError}</div>
+          </div>
         )}
 
         {messages.map((msg) => {
           const isMine = msg.senderId === currentUser.id;
           const isSystem = msg.senderId === 'system';
+          const bubbleClass = isMine
+            ? 'bg-[#d9fdd3] text-slate-900 rounded-tr-sm'
+            : 'bg-white text-slate-900 rounded-tl-sm';
           return (
-            <ConsultationMessageBubble
-              key={msg.id}
-              align={isSystem ? 'center' : isMine ? 'right' : 'left'}
-              variant={isSystem ? 'system' : isMine ? 'mine' : 'theirs'}
-              senderName={!isMine && !isSystem ? msg.senderName : undefined}
-              text={getDisplayText(msg)}
-              attachment={msg.attachment ? { name: msg.attachment.name, url: msg.attachment.url } : undefined}
-              timestampLabel={new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              statusLabel={isMine ? (msg.isRead ? 'Read' : 'Sent') : undefined}
-            />
+            <div key={msg.id} className={`flex ${isSystem ? 'justify-center' : isMine ? 'justify-end' : 'justify-start'}`}>
+              {isSystem ? (
+                <div className="bg-[#fff5c4] text-slate-700 text-[11px] rounded-lg px-3 py-2 max-w-[85%] text-center shadow-sm">
+                  {getDisplayText(msg)}
+                </div>
+              ) : (
+                <div className={`max-w-[82%] rounded-xl px-3 py-2 shadow-sm ${bubbleClass}`}>
+                  {!isMine && <div className="text-[10px] font-bold text-slate-500 mb-1">{msg.senderName}</div>}
+                  <div className="whitespace-pre-wrap break-words text-[13px]">{getDisplayText(msg)}</div>
+
+                  {msg.attachment && (
+                    <div className="mt-2 rounded-lg overflow-hidden border border-black/10">
+                      {msg.attachment.type === 'image' ? (
+                        <img src={msg.attachment.url} alt={msg.attachment.name} className="max-h-56 w-full object-cover" />
+                      ) : msg.attachment.type === 'video' ? (
+                        <video src={msg.attachment.url} controls className="max-h-56 w-full bg-black" />
+                      ) : (
+                        <a
+                          href={msg.attachment.url}
+                          target="_blank"
+                          rel="noreferrer"
+                          className="block p-2 text-[12px] font-semibold text-blue-700 underline"
+                        >
+                          Open {msg.attachment.name}
+                        </a>
+                      )}
+                    </div>
+                  )}
+
+                  <div className="mt-1 text-[10px] text-slate-500 text-right">
+                    {formatTs(msg.timestamp)} {isMine ? (msg.isRead ? '✓✓' : '✓') : ''}
+                  </div>
+                </div>
+              )}
+            </div>
           );
         })}
 

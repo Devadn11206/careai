@@ -276,7 +276,39 @@ export interface ChatMessage {
   timestamp: string;
   isRead: boolean;
   attachmentUrl?: string;
-  attachmentType?: 'image' | 'pdf';
+  attachmentType?: 'image' | 'pdf' | 'video' | 'file';
+}
+
+export interface PresenceUpdate {
+  userId: string;
+  online: boolean;
+}
+
+export interface TypingEvent {
+  appointmentId: string;
+  senderId: string;
+  isTyping: boolean;
+}
+
+export interface ChatEmergencyAlert {
+  doctorId: string;
+  messageId: string;
+  keywords: string[];
+}
+
+export interface ConsultationSummary {
+  id: string;
+  appointmentId: string;
+  patientId: string;
+  doctorId: string;
+  transcript: string;
+  symptoms: string;
+  possibleCondition: string;
+  keyDiscussionPoints: string[];
+  recommendations: string;
+  followUpInstructions: string;
+  disclaimer?: string;
+  createdAt: string;
 }
 
 export interface DoctorAnalytics {

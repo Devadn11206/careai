@@ -64,15 +64,21 @@ export const AdminDashboard: React.FC = () => {
           qualification: d.qualification || '',
           registrationNumber: d.registrationNumber || '',
           medicalCouncil: d.medicalCouncil,
-          status: d.status || DoctorStatus.VERIFIED,
+          status: d.status || DoctorStatus.PENDING,
           rating: d.rating,
           bio: '',
       }));
 
-      // In demo/dev we keep using mock doctors (with rich demo metadata).
-      // In production we rely solely on live backend doctors so that no
-      // hardcoded/demo profiles ever appear in patient/admin dashboards.
-      setDoctors(IS_DEMO_MODE ? mockDoctors : liveDoctors);
+      // Keep backend doctors authoritative for verification status.
+      // In demo mode, append mock-only doctors that don't exist in backend.
+      const mergedDoctors = IS_DEMO_MODE
+          ? [
+              ...liveDoctors,
+              ...mockDoctors.filter((md) => !liveDoctors.some((ld) => ld.email === md.email)),
+            ]
+          : liveDoctors;
+
+      setDoctors(mergedDoctors);
       setDocuments(docs);
       setAlerts(al);
   };
@@ -103,7 +109,7 @@ export const AdminDashboard: React.FC = () => {
                 qualification: doctor.qualification || '',
                 registrationNumber: doctor.registrationNumber || '',
                 medicalCouncil: doctor.medicalCouncil,
-                status: doctor.status || DoctorStatus.VERIFIED,
+                status: doctor.status || DoctorStatus.PENDING,
                 rating: doctor.rating,
                 bio: '',
             };
@@ -169,10 +175,16 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const handleStatusChange = async (id: string, status: DoctorStatus) => {
+        // Always update backend as source of truth for access control.
+        await BackendAPI.updateDoctorStatus({ doctorId: id, status });
+
+        // In demo mode we also mirror into local mock data where possible.
         if (IS_DEMO_MODE) {
-            await MockBackend.updateDoctorStatus(id, status, remarks);
-        } else {
-            await BackendAPI.updateDoctorStatus({ doctorId: id, status });
+            try {
+                await MockBackend.updateDoctorStatus(id, status, remarks);
+            } catch {
+                // Ignore mock sync failures for backend-only doctor IDs.
+            }
         }
     if (selectedDoctor?.id === id) {
       setSelectedDoctor(null);
@@ -349,7 +361,11 @@ export const AdminDashboard: React.FC = () => {
                               <td className="px-6 py-4"><span className="bg-slate-100 dark:bg-slate-700 dark:text-slate-300 px-2 py-1 rounded text-xs font-bold">{u.role}</span></td>
                               <td className="px-6 py-4 text-slate-500 dark:text-slate-400">{u.email}</td>
                               <td className="px-6 py-4">
-                                  {u.isBlocked ? (
+                                  {(u.role === UserRole.DOCTOR && (u as DoctorProfile).status && (u as DoctorProfile).status !== DoctorStatus.VERIFIED) ? (
+                                      <span className="text-amber-700 font-bold text-xs bg-amber-50 dark:bg-amber-900/30 px-2 py-1 rounded">
+                                          {(u as DoctorProfile).status}
+                                      </span>
+                                  ) : u.isBlocked ? (
                                       <span className="text-red-500 font-bold text-xs bg-red-50 dark:bg-red-900/30 px-2 py-1 rounded">BLOCKED</span>
                                   ) : <span className="text-emerald-600 dark:text-emerald-400 font-bold text-xs bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded">ACTIVE</span>}
                               </td>

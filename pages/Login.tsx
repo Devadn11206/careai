@@ -152,7 +152,20 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       if (IS_DEMO_MODE) {
         const localProfile = await MockBackend.login(email, password);
         if (localProfile && localProfile.role === backendUser.role) {
-          finalUser = localProfile as User;
+          if (backendUser.role === UserRole.DOCTOR) {
+            // Backend doctor identity/status must stay authoritative for access control.
+            finalUser = {
+              ...(localProfile as any),
+              ...(backendUser as any),
+              id: backendUser.id,
+              email: backendUser.email,
+              role: backendUser.role,
+              name: backendUser.name,
+              status: (backendUser as any).status ?? (localProfile as any).status,
+            } as User;
+          } else {
+            finalUser = localProfile as User;
+          }
         }
       }
 
@@ -240,7 +253,15 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
             docCouncil,
             docFile || undefined
           );
-          backendUser = localDoctor as unknown as User;
+          backendUser = {
+            ...(localDoctor as any),
+            ...(result.user as any),
+            id: result.user.id,
+            email: result.user.email,
+            role: result.user.role,
+            name: result.user.name,
+            status: (result.user as any).status ?? (localDoctor as any).status,
+          } as User;
         } catch {
           // If local registration fails, fall back to the backend user
           backendUser = result.user as unknown as User;

@@ -21,6 +21,7 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
   const [attachment, setAttachment] = useState<File | null>(null);
   const [loading, setLoading] = useState(true);
   const [sending, setSending] = useState(false);
+    const [sendError, setSendError] = useState<string | null>(null);
   const [accessError, setAccessError] = useState<string | null>(null);
     const [isOtherOnline, setIsOtherOnline] = useState<boolean>(false);
     const [isOtherTyping, setIsOtherTyping] = useState<boolean>(false);
@@ -29,10 +30,20 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+    const dedupeMessages = (items: ChatMessage[]): ChatMessage[] => {
+        const byKey = new Map<string, ChatMessage>();
+        for (const item of items) {
+            const fallbackKey = `${item.appointmentId}:${item.senderId}:${item.timestamp}:${item.content}:${item.attachmentUrl || ''}`;
+            const key = item.id || fallbackKey;
+            byKey.set(key, item);
+        }
+        return Array.from(byKey.values()).sort((a, b) => +new Date(a.timestamp) - +new Date(b.timestamp));
+    };
+
   const fetchMessages = async () => {
         try {
             const msgs = await BackendAPI.getChatMessages(appointmentId);
-            setMessages(msgs);
+                        setMessages(dedupeMessages(msgs));
             setLoading(false);
         } catch (err: any) {
             const msg = (err && err.message) || 'Chat access denied.';
@@ -47,11 +58,7 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
 
         const unsubscribeChat = BackendAPI.onChatMessage((msg) => {
             if (msg.appointmentId !== appointmentId) return;
-            setMessages((prev) => {
-                const exists = prev.find((m) => m.id === msg.id);
-                if (exists) return prev;
-                return [...prev, msg];
-            });
+            setMessages((prev) => dedupeMessages([...prev, msg]));
         });
         const unsubscribePresence = BackendAPI.onPresenceUpdate((p: PresenceUpdate) => {
             if (p.userId === otherUserId) {
@@ -79,9 +86,10 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
     if ((!newMessage.trim() && !attachment) || sending) return;
 
     setSending(true);
+        setSendError(null);
     try {
                 let attachmentUrl: string | undefined;
-                let attachmentType: 'image' | 'pdf' | undefined;
+                let attachmentType: 'image' | 'pdf' | 'video' | 'file' | undefined;
 
                 if (attachment) {
                     attachmentUrl = await new Promise<string>((resolve) => {
@@ -89,20 +97,26 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
                         reader.onloadend = () => resolve(reader.result as string);
                         reader.readAsDataURL(attachment);
                     });
-                    attachmentType = attachment.type.startsWith('image/') ? 'image' : 'pdf';
+                    if (attachment.type.startsWith('image/')) attachmentType = 'image';
+                    else if (attachment.type.startsWith('video/')) attachmentType = 'video';
+                    else if (attachment.type === 'application/pdf') attachmentType = 'pdf';
+                    else attachmentType = 'file';
                 }
 
-                await BackendAPI.sendChatMessage({
+                const sent = await BackendAPI.sendChatMessage({
                     appointmentId,
                     content: newMessage,
                     attachmentUrl,
                     attachmentType,
                 });
+                setMessages((prev) => dedupeMessages([...prev, sent]));
 
                 setNewMessage('');
                 setAttachment(null);
+                notifyTyping(false);
     } catch (error) {
         console.error("Failed to send", error);
+        setSendError(error instanceof Error ? error.message : 'Failed to send message');
     } finally {
         setSending(false);
     }
@@ -221,10 +235,11 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
                         <p className="text-sm">Say "Hello" to start the conversation.</p>
                     </div>
                 ) : (
-                    messages.map(msg => {
+                    messages.map((msg, index) => {
                         const isMe = msg.senderId === currentUserId;
+                        const renderKey = msg.id || `${msg.timestamp}-${msg.senderId}-${index}`;
                         return (
-                            <div key={msg.id} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group mb-1`}>
+                            <div key={renderKey} className={`flex ${isMe ? 'justify-end' : 'justify-start'} group mb-1`}>
                                 <div className={`max-w-[80%] rounded-lg px-3 py-1.5 shadow-sm relative text-sm break-words ${
                                     isMe 
                                     ? 'bg-[#d9fdd3] text-slate-900 rounded-tr-none' 
@@ -241,10 +256,12 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
                                         <div className="mb-2 mt-1 rounded-lg overflow-hidden border border-black/5">
                                              {msg.attachmentType === 'image' ? (
                                                  <img src={msg.attachmentUrl} alt="Attachment" className="max-w-full max-h-60 object-cover" />
+                                             ) : msg.attachmentType === 'video' ? (
+                                                 <video src={msg.attachmentUrl} controls className="max-w-full max-h-60 w-full bg-black" />
                                              ) : (
                                                  <a 
                                                     href={msg.attachmentUrl} 
-                                                    download="shared_document.pdf"
+                                                    download
                                                     target="_blank"
                                                     rel="noopener noreferrer"
                                                     className="bg-slate-100 p-3 flex items-center gap-3 cursor-pointer hover:bg-slate-200 transition-colors no-underline group/doc"
@@ -253,8 +270,8 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
                                                         <svg className="w-6 h-6" fill="currentColor" viewBox="0 0 24 24"><path d="M14 2H6c-1.1 0-1.99.9-1.99 2L4 20c0 1.1.89 2 1.99 2H18c1.1 0 2-.9 2-2V8l-6-6zm2 16H8v-2h8v2zm0-4H8v-2h8v2zm-3-5V3.5L18.5 9H13z"/></svg>
                                                      </div>
                                                      <div className="overflow-hidden">
-                                                         <p className="font-bold text-xs truncate text-slate-800">Document</p>
-                                                         <p className="text-[10px] text-slate-500">PDF • Click to download</p>
+                                                         <p className="font-bold text-xs truncate text-slate-800">Attachment</p>
+                                                         <p className="text-[10px] text-slate-500">Click to open</p>
                                                      </div>
                                                  </a>
                                              )}
@@ -328,7 +345,7 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
                     >
                         <svg className="w-6 h-6 rotate-45" fill="currentColor" viewBox="0 0 24 24"><path d="M16.5 6v11.5c0 2.21-1.79 4-4 4s-4-1.79-4-4V5a2.5 2.5 0 0 1 5 0v10.5c0 .55-.45 1-1 1s-1-.45-1-1V6H10v9.5a2.5 2.5 0 0 0 5 0V5c0-2.21-1.79-4-4-4S7 2.79 7 5v12.5c0 3.04 2.46 5.5 5.5 5.5s5.5-2.46 5.5-5.5V6h-1.5z"/></svg>
                     </button>
-                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*,application/pdf" onChange={e => e.target.files && setAttachment(e.target.files[0])} />
+                    <input type="file" ref={fileInputRef} className="hidden" accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" onChange={e => e.target.files && setAttachment(e.target.files[0])} />
                     
                     <textarea
                         value={newMessage}
@@ -366,6 +383,11 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
                     )}
                 </button>
             </div>
+            {sendError && (
+                <div className="px-4 pb-3 text-[11px] text-red-600 bg-[#F0F2F5] border-t border-red-100">
+                    {sendError}
+                </div>
+            )}
         </motion.div>
     </div>
   );

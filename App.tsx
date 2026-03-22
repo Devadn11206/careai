@@ -11,6 +11,7 @@ import { MockBackend } from './services/mockBackend';
 import { BackendAPI, setToken, getToken } from './services/apiClient';
 import { SplashScreen } from './components/SplashScreen';
 import { SymptomScreening } from './components/SymptomScreening';
+import { AppErrorBoundary } from './components/AppErrorBoundary';
 
 type AppView = 'SPLASH' | 'LANDING' | 'AUTH' | 'APP' | 'SCREENING';
 
@@ -39,7 +40,12 @@ function App() {
       try {
         const backendUser = await BackendAPI.getCurrentUser();
         setUser(backendUser as User);
-        BackendAPI.getSocket();
+        try {
+          BackendAPI.getSocket();
+        } catch (socketErr) {
+          // A realtime connection failure should not force logout.
+          console.warn('Socket initialization failed during bootstrap', socketErr);
+        }
       } catch {
         // Token invalid/expired; clear it and show login
         setToken(null);
@@ -93,7 +99,14 @@ function App() {
       case UserRole.PATIENT:
         return <PatientDashboard user={user as PatientProfile} />;
       case UserRole.DOCTOR:
-        return <DoctorDashboard user={user as DoctorProfile} />;
+        return (
+          <AppErrorBoundary
+            fallbackTitle="Doctor dashboard failed to load"
+            fallbackMessage="A runtime error occurred in the doctor dashboard. You can reload and continue working."
+          >
+            <DoctorDashboard user={user as DoctorProfile} />
+          </AppErrorBoundary>
+        );
       case UserRole.ADMIN:
         return <AdminDashboard />;
       default:
