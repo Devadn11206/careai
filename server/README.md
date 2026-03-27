@@ -28,6 +28,8 @@ Windows shortcut:
 
 - `OWNER_ADMIN_EMAIL` / `OWNER_ADMIN_PASSWORD`: ensures a single owner admin account exists on startup.
 - `AGORA_APP_ID` / `AGORA_APP_CERTIFICATE`: required for `POST /agora-token`.
+- `ALLOWED_ORIGINS`: comma-separated frontend origins allowed by HTTP CORS + Socket.IO (example: `https://carexai.vercel.app,http://localhost:3000`).
+- `GROQ_API_KEY` / `GROQ_MODEL`: required for AI consultation summary endpoint `POST /appointments/:appointmentId/ai-summary`.
 
 ### Python prerequisites (only for `/ai/health-risk`)
 

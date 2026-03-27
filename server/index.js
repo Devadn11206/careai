@@ -20,16 +20,45 @@ const PYTHON_RISK_SCRIPT = path.resolve(__dirname, '../../handrecognition/ml_ris
 
 const prisma = new PrismaClient();
 
+const parseAllowedOrigins = (rawValue) => {
+  const values = String(rawValue || '')
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean);
+  return [...new Set(values)];
+};
+
+const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
+const isOriginAllowed = (origin) => {
+  if (!origin) return true;
+  if (ALLOWED_ORIGINS.length === 0) return true;
+  return ALLOWED_ORIGINS.includes(origin);
+};
+
+const corsOriginOption = (origin, callback) => {
+  if (isOriginAllowed(origin)) {
+    callback(null, true);
+    return;
+  }
+  callback(new Error(`CORS blocked for origin: ${origin}`));
+};
+
 const app = express();
 // Support base64 chat attachments (images/docs/videos) without hitting tiny default body limits.
 app.use(express.json({ limit: '20mb' }));
-app.use(cors({ origin: '*', credentials: true }));
+app.use(cors({ origin: corsOriginOption, credentials: true }));
+app.set('trust proxy', 1);
+
+app.get('/health', (_req, res) => {
+  res.json({ ok: true, service: 'carexai-server', timestamp: new Date().toISOString() });
+});
 
 const server = http.createServer(app);
 const io = new SocketIOServer(server, {
   cors: {
-    origin: '*',
+    origin: corsOriginOption,
     methods: ['GET', 'POST', 'PATCH'],
+    credentials: true,
   },
 });
 

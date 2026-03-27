@@ -331,6 +331,7 @@ DATABASE_URL="file:./dev.db"
 # Auth
 JWT_SECRET="<your_jwt_secret_here>"
 PORT=4000
+ALLOWED_ORIGINS="http://localhost:3000,https://your-frontend-domain.vercel.app"
 
 # Owner admin bootstrap (optional)
 # If set, the backend ensures this admin exists on startup.
@@ -340,6 +341,10 @@ OWNER_ADMIN_PASSWORD="change-me"
 # Video (Agora)
 AGORA_APP_ID="<your_agora_app_id_here>"
 AGORA_APP_CERTIFICATE="<your_agora_app_certificate_here>"
+
+# AI summarization (Groq)
+GROQ_API_KEY="<your_groq_api_key_here>"
+GROQ_MODEL="llama-3.3-70b-versatile"
 ```
 
 ---
@@ -409,7 +414,7 @@ Windows shortcut:
 Vite will start the frontend, usually at:
 
 ```text
-http://localhost:5173
+http://localhost:3000
 ```
 
 Open this URL in your browser to use CareXAI.
@@ -457,23 +462,67 @@ Open this URL in your browser to use CareXAI.
 
 ---
 
-## 13. Deployment Notes (Fixing localhost:4000 in Production)
+## 13. Live Deployment + Real-Time Sync Checklist
 
-If you see errors like `Failed to load resource: net::ERR_CONNECTION_REFUSED` to `http://localhost:4000/...` on your deployed site, it means the frontend is still pointing to a local backend.
+This section gives you a production path that keeps API calls and Socket.IO events in sync.
 
-- The frontend reads the base API URL from `VITE_API_BASE_URL` at build time. In production builds, you must set this to your public backend URL.
+### 13.1 Deploy Backend First (Render/Railway/Fly)
 
-### Steps
+Set backend root to `server/` and configure:
 
-- Deploy the backend (Express + Prisma) to a public host (e.g., Render, Railway, Fly.io, VPS). Ensure CORS allows your frontend origin.
-- In your frontend hosting (e.g., Vercel):
-   - Add an environment variable `VITE_API_BASE_URL` with your backend base URL (no trailing slash), for example:
-      - `https://carexai-backend.onrender.com`
-   - Redeploy the frontend so Vite bakes the correct URL into the bundle.
+- Build command: `npm install && npx prisma generate && npx prisma migrate deploy`
+- Start command: `npm run dev`
+- Health check path: `/health`
 
-Optional: If you’ll proxy API calls through the same origin (e.g., `/api` on Vercel via rewrites), set `VITE_API_BASE_URL` to that proxied base and add the corresponding rewrite rules.
+Set backend environment variables:
 
-We include `.env.production.example` showing the required variable for production builds.
+- `DATABASE_URL` (production DB strongly recommended, preferably Postgres)
+- `JWT_SECRET`
+- `PORT=4000` (or provider default)
+- `ALLOWED_ORIGINS=https://<your-vercel-domain>` (comma-separated if multiple)
+- `OWNER_ADMIN_EMAIL`
+- `OWNER_ADMIN_PASSWORD`
+- `AGORA_APP_ID`
+- `AGORA_APP_CERTIFICATE`
+- `GROQ_API_KEY`
+- `GROQ_MODEL=llama-3.3-70b-versatile`
+
+After deploy, verify:
+
+- `GET https://<your-backend-domain>/health` returns `{ ok: true, ... }`
+- `GET https://<your-backend-domain>/auth/me` returns `401` (expected without token, proves route is reachable)
+
+### 13.2 Deploy Frontend (Vercel)
+
+Set frontend environment variables in Vercel:
+
+- `VITE_API_BASE_URL=https://<your-backend-domain>`
+- `VITE_GEMINI_API_KEY=<your_key>` (if using Gemini features)
+- `VITE_AGORA_APP_ID=<your_agora_app_id>`
+
+Redeploy frontend so values are baked into the production bundle.
+
+### 13.3 Real-Time Sync Must-Haves
+
+- Backend `ALLOWED_ORIGINS` must include your exact frontend origin (protocol + domain).
+- Frontend must point to the same backend with `VITE_API_BASE_URL`.
+- Do not leave production frontend pointed to `localhost`.
+- Keep backend on a single instance unless you add a Socket.IO adapter (Redis) for multi-instance broadcast.
+
+### 13.4 Production Verification (End-to-End)
+
+1. Open app in two browsers (or one normal + one incognito).
+2. Login as patient in one and doctor in the other.
+3. Book appointment as patient.
+4. Confirm doctor UI receives `appointment:created` without refresh.
+5. Send chat message and confirm instant delivery both sides.
+6. Change appointment status as doctor and confirm patient queue/status updates immediately.
+
+If realtime fails, check:
+
+- Browser console for `CORS` or `WebSocket` errors.
+- Backend logs for rejected origin messages.
+- `ALLOWED_ORIGINS` and `VITE_API_BASE_URL` values for exact domain match.
 
 ---
 
