@@ -1,4 +1,5 @@
 import 'dotenv/config';
+import 'express-async-errors';
 import express from 'express';
 import cors from 'cors';
 import http from 'http';
@@ -118,6 +119,8 @@ const shapeDoctor = (d) => {
     qualification: d.qualification || null,
     registrationNumber: d.registrationNumber || null,
     medicalCouncil: d.medicalCouncil || null,
+    verificationDocumentUrl: d.verificationDocumentUrl || null,
+    verificationDocumentName: d.verificationDocumentName || null,
     rating: d.rating ?? null,
     status: d.doctorStatus || null,
     hasSchedule: !!d.doctorSchedule,
@@ -327,6 +330,40 @@ const ensureOwnerAdminUser = async () => {
   console.log('Owner admin ensured:', OWNER_ADMIN_EMAIL);
 };
 
+const clearAllNonAdminData = async () => {
+  return prisma.$transaction(async (tx) => {
+    const deleteTargets = {
+      medicationAlerts: await tx.medicationMissedDoseAlert.deleteMany({}),
+      medicationAdherence: await tx.medicationAdherence.deleteMany({}),
+      medicationOrders: await tx.medicationOrder.deleteMany({}),
+      consultationSummaries: await tx.consultationSummary.deleteMany({}),
+      chatMessages: await tx.chatMessage.deleteMany({}),
+      healthMetrics: await tx.healthMetric.deleteMany({}),
+      appointments: await tx.appointment.deleteMany({}),
+      timeSlots: await tx.timeSlot.deleteMany({}),
+      doctorSchedules: await tx.doctorSchedule.deleteMany({}),
+      nonAdminUsers: await tx.user.deleteMany({
+        where: {
+          role: { not: 'ADMIN' },
+        },
+      }),
+    };
+
+    return {
+      medicationAlerts: deleteTargets.medicationAlerts.count,
+      medicationAdherence: deleteTargets.medicationAdherence.count,
+      medicationOrders: deleteTargets.medicationOrders.count,
+      consultationSummaries: deleteTargets.consultationSummaries.count,
+      chatMessages: deleteTargets.chatMessages.count,
+      healthMetrics: deleteTargets.healthMetrics.count,
+      appointments: deleteTargets.appointments.count,
+      timeSlots: deleteTargets.timeSlots.count,
+      doctorSchedules: deleteTargets.doctorSchedules.count,
+      nonAdminUsers: deleteTargets.nonAdminUsers.count,
+    };
+  });
+};
+
 const generateSlotsForDate = async (doctorId, dateStr) => {
   const config = await ensureDoctorSchedule(doctorId);
   const schedule = JSON.parse(config.scheduleJson || '[]');
@@ -441,6 +478,8 @@ app.post('/auth/register', async (req, res) => {
       registrationNumber,
       medicalCouncil,
       experienceYears,
+      verificationDocumentUrl,
+      verificationDocumentName,
     } = req.body || {};
 
     if (!name || !email || !password || !role) {
@@ -460,10 +499,29 @@ app.post('/auth/register', async (req, res) => {
 
     const data = { name, email, passwordHash, role };
     if (role === 'DOCTOR') {
+      const cleanRegNo = String(registrationNumber || '').trim();
+      const cleanDocUrl = String(verificationDocumentUrl || '').trim();
+      const cleanDocName = String(verificationDocumentName || '').trim();
+
+      if (!cleanRegNo) {
+        return res.status(400).json({ error: 'Doctor registration number is required' });
+      }
+      if (!cleanDocUrl) {
+        return res.status(400).json({ error: 'Medical certificate/license upload is required' });
+      }
+      if (!/^data:|^https?:\/\//i.test(cleanDocUrl)) {
+        return res.status(400).json({ error: 'Invalid certificate document format' });
+      }
+      if (cleanDocUrl.length > 10 * 1024 * 1024) {
+        return res.status(400).json({ error: 'Uploaded certificate is too large' });
+      }
+
       data.specialization = specialization || null;
       data.qualification = qualification || null;
-      data.registrationNumber = registrationNumber || null;
+      data.registrationNumber = cleanRegNo;
       data.medicalCouncil = medicalCouncil || null;
+      data.verificationDocumentUrl = cleanDocUrl;
+      data.verificationDocumentName = cleanDocName || null;
       data.experienceYears =
         typeof experienceYears === 'number'
           ? experienceYears
@@ -482,7 +540,7 @@ app.post('/auth/register', async (req, res) => {
       await ensureDoctorSchedule(user.id);
     }
 
-    const token = generateToken(user);
+    const token = role === 'PATIENT' ? generateToken(user) : null;
     return res.status(201).json({
       token,
       user: {
@@ -508,6 +566,18 @@ app.post('/auth/login', async (req, res) => {
   // Lock admin access to the single owner account only
   if (user.role === 'ADMIN' && user.email !== OWNER_ADMIN_EMAIL) {
     return res.status(403).json({ error: 'Admin access is restricted to the owner account.' });
+  }
+  if (user.role === 'DOCTOR') {
+    const status = user.doctorStatus || 'PENDING';
+    if (status !== 'VERIFIED') {
+      return res.status(403).json({
+        error:
+          status === 'REJECTED'
+            ? 'Doctor account has been rejected by admin review.'
+            : 'Doctor account is pending admin approval. Please wait for verification.',
+        status,
+      });
+    }
   }
   const token = generateToken(user);
   return res.json({
@@ -710,8 +780,16 @@ app.post('/appointments', authMiddleware, async (req, res) => {
     const healthPassport = autoShare.healthPassport && typeof autoShare.healthPassport === 'object'
       ? autoShare.healthPassport
       : {};
-    const vitalsTrend = Array.isArray(autoShare.vitalsTrend) ? autoShare.vitalsTrend.slice(-5) : [];
-    const documents = Array.isArray(autoShare.documents) ? autoShare.documents.slice(0, 10) : [];
+    const vitalsTrend = Array.isArray(autoShare.vitalsTrend) ? autoShare.vitalsTrend.slice(-100) : [];
+    const history = Array.isArray(autoShare.history) ? autoShare.history.slice(-200) : [];
+    const medications = Array.isArray(autoShare.medications) ? autoShare.medications.slice(0, 100) : [];
+    const documents = Array.isArray(autoShare.documents) ? autoShare.documents.slice(0, 50) : [];
+    const patientProfile = autoShare.patientProfile && typeof autoShare.patientProfile === 'object'
+      ? autoShare.patientProfile
+      : {};
+    const aiAnalysis = autoShare.aiAnalysis && typeof autoShare.aiAnalysis === 'object'
+      ? autoShare.aiAnalysis
+      : {};
 
     const summaryLines = [
       'AUTO-SHARED PATIENT SNAPSHOT',
@@ -728,6 +806,8 @@ app.post('/appointments', authMiddleware, async (req, res) => {
       `- Hypertension Risk: ${typeof riskSummary.hypertensionRisk === 'number' ? riskSummary.hypertensionRisk + '%' : 'N/A'}`,
       `- Heart Disease Risk: ${typeof riskSummary.heartDiseaseRisk === 'number' ? riskSummary.heartDiseaseRisk + '%' : 'N/A'}`,
       `Vitals Trend Points Shared: ${vitalsTrend.length}`,
+      `Vitals History Points Shared: ${history.length}`,
+      `Medication Entries Shared: ${medications.length}`,
       `Documents Shared: ${documents.length}`,
     ];
 
@@ -746,6 +826,42 @@ app.post('/appointments', authMiddleware, async (req, res) => {
       .to(`user:${appt.doctorId}`)
       .to('role:ADMIN')
       .emit('chat:message', shapeChatMessage(summaryMessage));
+
+    const structuredSharePayload = {
+      bookedAt: new Date().toISOString(),
+      appointment: { id: appt.id, date, time, consultationType, symptoms: symptoms || null },
+      patientProfile,
+      currentVitals,
+      vitalsTrend,
+      history,
+      healthPassport,
+      riskSummary,
+      aiAnalysis,
+      medications,
+      documents: documents.map((d) => ({
+        name: d?.name || null,
+        type: d?.type || null,
+        date: d?.date || null,
+        category: d?.category || null,
+        url: typeof d?.url === 'string' ? d.url : null,
+      })),
+    };
+
+    const structuredShareMessage = await prisma.chatMessage.create({
+      data: {
+        appointment: { connect: { id: appt.id } },
+        sender: { connect: { id: appt.patientId } },
+        receiver: { connect: { id: appt.doctorId } },
+        senderRole: 'PATIENT',
+        content: `AUTO-SHARED PATIENT DASHBOARD JSON: ${JSON.stringify(structuredSharePayload)}`,
+      },
+    });
+
+    io
+      .to(`user:${appt.patientId}`)
+      .to(`user:${appt.doctorId}`)
+      .to('role:ADMIN')
+      .emit('chat:message', shapeChatMessage(structuredShareMessage));
 
     for (const doc of documents) {
       const docName = doc && doc.name ? String(doc.name) : 'Unnamed document';
@@ -804,15 +920,39 @@ app.patch('/appointments/:id/status', authMiddleware, async (req, res) => {
   const appt = await prisma.appointment.findUnique({ where: { id: req.params.id } });
   if (!appt) return res.status(404).json({ error: 'Appointment not found' });
 
-  // Only the owning doctor can mark status changes for their appointments
-  if (role !== 'DOCTOR' || appt.doctorId !== userId) {
-    return res.status(403).json({ error: 'Only the assigned doctor can update status' });
+  const isDoctorOwner = role === 'DOCTOR' && appt.doctorId === userId;
+  const isPatientOwnerCancel = role === 'PATIENT' && appt.patientId === userId && status === 'CANCELLED';
+
+  // Doctors can manage their assigned appointments. Patients can only cancel their own appointment.
+  if (!isDoctorOwner && !isPatientOwnerCancel) {
+    return res.status(403).json({ error: 'Not allowed to update this appointment status' });
   }
 
-  const updated = await prisma.appointment.update({
-    where: { id: appt.id },
-    data: { status },
-    include: { patient: true, doctor: true },
+  if (role === 'PATIENT') {
+    if (appt.status === 'COMPLETED' || appt.status === 'CANCELLED' || appt.status === 'REJECTED') {
+      return res.status(400).json({ error: `Cannot cancel an appointment in ${appt.status} state` });
+    }
+    if (appt.status === 'IN_PROGRESS') {
+      return res.status(400).json({ error: 'Cannot cancel an appointment that is already in progress' });
+    }
+  }
+
+  const updated = await prisma.$transaction(async (tx) => {
+    const changed = await tx.appointment.update({
+      where: { id: appt.id },
+      data: { status },
+      include: { patient: true, doctor: true },
+    });
+
+    const becameCancelled = status === 'CANCELLED' && appt.status !== 'CANCELLED';
+    if (becameCancelled && appt.slotId) {
+      await tx.timeSlot.updateMany({
+        where: { id: appt.slotId, bookedCount: { gt: 0 } },
+        data: { bookedCount: { decrement: 1 } },
+      });
+    }
+
+    return changed;
   });
 
   const shaped = {
@@ -1135,9 +1275,34 @@ app.post('/ai/health-risk', authMiddleware, async (req, res) => {
 
   const { metrics, age, gender } = req.body || {};
   const safeMetrics = metrics && typeof metrics === 'object' ? metrics : {};
+  const parsedAge = Number(age);
+  const normalizedAge = Number.isFinite(parsedAge) && parsedAge > 0 ? parsedAge : 40;
+
+  const clamp01 = (v) => Math.max(0, Math.min(1, Number(v) || 0));
+  const norm = (v, min, max) => {
+    const n = (Number(v) - min) / (max - min);
+    return clamp01(n);
+  };
+
+  const fieldChecks = [
+    { key: 'age', value: normalizedAge, min: 1, max: 120 },
+    { key: 'systolicBP', value: Number(safeMetrics.systolicBP), min: 60, max: 260 },
+    { key: 'glucose', value: Number(safeMetrics.glucose), min: 20, max: 700 },
+    { key: 'bmi', value: Number(safeMetrics.bmi), min: 10, max: 80 },
+    { key: 'cholesterol', value: Number(safeMetrics.cholesterol), min: 70, max: 600 },
+    { key: 'maxHeartRate', value: Number(safeMetrics.maxHeartRate || 0), min: 0, max: 260 },
+    { key: 'stDepression', value: Number(safeMetrics.stDepression || 0), min: 0, max: 10 },
+  ];
+
+  const invalidField = fieldChecks.find((f) => Number.isNaN(f.value) || f.value < f.min || f.value > f.max);
+  if (invalidField) {
+    return res.status(400).json({
+      error: `Invalid ${invalidField.key} value. Expected range ${invalidField.min}-${invalidField.max}.`,
+    });
+  }
 
   const payload = {
-    age: Number(age) || 0,
+    age: normalizedAge,
     glucose: Number(safeMetrics.glucose) || 0,
     bmi: Number(safeMetrics.bmi) || 0,
     bp: Number(safeMetrics.systolicBP) || 0,
@@ -1173,9 +1338,37 @@ app.post('/ai/health-risk', authMiddleware, async (req, res) => {
 
     try {
       const parsed = JSON.parse(stdout || '{}');
-      const diabetesProb = Number(parsed.diabetes_risk) || 0;
-      const heartProb = Number(parsed.heart_risk) || 0;
-      const hyperProb = Number(parsed.hyper_risk) || 0;
+      const diabetesModelProb = clamp01(parsed.diabetes_risk);
+      const heartModelProb = clamp01(parsed.heart_risk);
+      const hyperModelProb = clamp01(parsed.hyper_risk);
+
+      // Rule-based clinical priors are blended with ML outputs to avoid unstable edge-case predictions.
+      const diabetesRuleProb = clamp01(
+        0.5 * norm(payload.glucose, 90, 200)
+        + 0.25 * norm(payload.bmi, 22, 35)
+        + 0.15 * norm(payload.age, 35, 70)
+        + 0.1 * norm(payload.bp, 120, 170)
+      );
+
+      const heartRuleProb = clamp01(
+        0.2 * norm(payload.age, 40, 80)
+        + 0.25 * norm(payload.bp, 120, 180)
+        + 0.25 * norm(payload.cholesterol, 180, 320)
+        + 0.2 * norm(payload.oldpeak, 1, 4)
+        + 0.1 * (1 - norm(payload.thalach || 160, 100, 180))
+      );
+
+      const hyperRuleProb = clamp01(
+        0.6 * norm(payload.bp, 120, 180)
+        + 0.15 * norm(payload.age, 35, 75)
+        + 0.15 * norm(payload.cholesterol, 180, 300)
+        + 0.1 * norm(payload.bmi, 24, 35)
+      );
+
+      const blend = (modelP, ruleP, modelWeight) => clamp01(modelWeight * modelP + (1 - modelWeight) * ruleP);
+      const diabetesProb = blend(diabetesModelProb, diabetesRuleProb, 0.75);
+      const heartProb = blend(heartModelProb, heartRuleProb, 0.75);
+      const hyperProb = blend(hyperModelProb, hyperRuleProb, 0.6);
 
       const toPercent = (p) => Math.round(Math.max(0, Math.min(1, p)) * 100);
 
@@ -1212,6 +1405,15 @@ app.post('/ai/health-risk', authMiddleware, async (req, res) => {
         buildPrediction('Hypertension', hyperProb),
       ];
 
+      const modelAgreement = 1 - (
+        (Math.abs(diabetesModelProb - diabetesRuleProb)
+          + Math.abs(heartModelProb - heartRuleProb)
+          + Math.abs(hyperModelProb - hyperRuleProb)) / 3
+      );
+      const optionalCoverage = (payload.thalach > 0 ? 1 : 0) * 0.5 + (payload.oldpeak > 0 ? 1 : 0) * 0.5;
+      const confidenceScore = Math.round((0.75 * modelAgreement + 0.25 * optionalCoverage) * 100);
+      const confidenceLevel = confidenceScore >= 80 ? 'High' : confidenceScore >= 60 ? 'Medium' : 'Low';
+
       const result = {
         predictions,
         diabetesRisk: toPercent(diabetesProb),
@@ -1228,11 +1430,11 @@ app.post('/ai/health-risk', authMiddleware, async (req, res) => {
           'Exercise at least 150 minutes per week as tolerated.',
           'Monitor blood pressure and glucose regularly and follow up with your clinician.',
         ],
-        confidenceLevel: 'High',
+        confidenceLevel,
         confidenceReason:
-          'Models are trained on structured clinical datasets but should not replace professional medical judgment.',
+          `Blended estimate from ML and clinical-rule cross-checks with ${confidenceScore}% internal agreement.`,
         confidenceImprovement:
-          'Provide the latest lab values and follow-up measurements to further improve risk estimation accuracy.',
+          'Provide full vitals including exercise heart-rate profile and repeat measurements to improve estimate stability.',
         timestamp: new Date().toISOString(),
       };
 
@@ -1303,8 +1505,32 @@ app.post('/appointments/:appointmentId/chat', authMiddleware, async (req, res) =
   const { appointmentId } = req.params;
   const { content, attachmentUrl, attachmentType } = req.body || {};
 
-  if (!content && !attachmentUrl) {
+  const normalizedContent = typeof content === 'string' ? content.trim() : '';
+  const normalizedAttachmentUrl = typeof attachmentUrl === 'string' ? attachmentUrl.trim() : '';
+  const normalizedAttachmentType = typeof attachmentType === 'string' ? attachmentType : null;
+
+  // Keep chat reliable and lightweight: reject empty payloads and oversized messages.
+  if (!normalizedContent && !normalizedAttachmentUrl) {
     return res.status(400).json({ error: 'Message content or attachment required' });
+  }
+
+  if (normalizedContent.length > 4000) {
+    return res.status(400).json({ error: 'Message too long (max 4000 characters)' });
+  }
+
+  if (normalizedAttachmentUrl) {
+    const validUrl = /^data:|^https?:\/\//i.test(normalizedAttachmentUrl);
+    if (!validUrl) {
+      return res.status(400).json({ error: 'Invalid attachment format' });
+    }
+
+    if (normalizedAttachmentUrl.length > 15 * 1024 * 1024) {
+      return res.status(400).json({ error: 'Attachment payload too large' });
+    }
+  }
+
+  if (normalizedAttachmentType && !['image', 'pdf', 'video', 'file'].includes(normalizedAttachmentType)) {
+    return res.status(400).json({ error: 'Unsupported attachment type' });
   }
 
   const appt = await prisma.appointment.findUnique({ where: { id: appointmentId } });
@@ -1333,9 +1559,9 @@ app.post('/appointments/:appointmentId/chat', authMiddleware, async (req, res) =
       sender: { connect: { id } },
       receiver: { connect: { id: receiverId } },
       senderRole: role,
-      content: typeof content === 'string' ? content : '',
-      attachmentUrl: attachmentUrl || null,
-      attachmentType: attachmentType || null,
+      content: normalizedContent,
+      attachmentUrl: normalizedAttachmentUrl || null,
+      attachmentType: normalizedAttachmentType || null,
     },
   });
 
@@ -1510,20 +1736,13 @@ app.post('/admin/clear-non-admin-users', authMiddleware, async (req, res) => {
   }
 
   try {
-    await prisma.$transaction(async (tx) => {
-      // Delete dependent data first to satisfy foreign key constraints
-      await tx.consultationSummary.deleteMany({});
-      await tx.chatMessage.deleteMany({});
-      await tx.healthMetric.deleteMany({});
-      await tx.appointment.deleteMany({});
-      await tx.timeSlot.deleteMany({});
-      await tx.doctorSchedule.deleteMany({});
+    const result = await clearAllNonAdminData();
 
-      // Finally delete all non-admin users
-      await tx.user.deleteMany({ where: { role: { not: 'ADMIN' } } });
+    res.json({
+      ok: true,
+      message: 'All login details except admin users have been cleared.',
+      deleted: result,
     });
-
-    res.json({ ok: true, message: 'All non-admin users and related data have been cleared.' });
   } catch (err) {
     console.error('Error clearing non-admin users', err);
     res.status(500).json({ error: 'Failed to clear non-admin users' });
@@ -1548,6 +1767,20 @@ app.patch('/admin/doctors/:id/status', authMiddleware, async (req, res) => {
   }
 
   try {
+    const doctor = await prisma.user.findUnique({ where: { id: req.params.id } });
+    if (!doctor || doctor.role !== 'DOCTOR') {
+      return res.status(404).json({ error: 'Doctor not found' });
+    }
+
+    if (status === 'VERIFIED') {
+      if (!doctor.registrationNumber || !doctor.registrationNumber.trim()) {
+        return res.status(400).json({ error: 'Doctor registration number is required before approval' });
+      }
+      if (!doctor.verificationDocumentUrl || !doctor.verificationDocumentUrl.trim()) {
+        return res.status(400).json({ error: 'Doctor certificate/license document is required before approval' });
+      }
+    }
+
     const updated = await prisma.user.update({
       where: { id: req.params.id },
       data: { doctorStatus: status },
@@ -1671,6 +1904,17 @@ io.on('connection', (socket) => {
 });
 
 const PORT = process.env.PORT || 4000;
+
+app.use((err, _req, res, _next) => {
+  const isPrismaInitError = err?.name === 'PrismaClientInitializationError';
+  if (isPrismaInitError) {
+    return res.status(503).json({ error: 'Database unavailable. Please try again shortly.' });
+  }
+
+  console.error('Unhandled API error', err);
+  return res.status(500).json({ error: 'Internal server error' });
+});
+
 server.listen(PORT, () => {
   console.log(`CareXAI realtime server listening on http://localhost:${PORT}`);
   // Ensure the single owner admin user exists on startup

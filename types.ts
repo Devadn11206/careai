@@ -90,6 +90,105 @@ export interface Medication {
   dosage: string;
   time: string;
   taken: boolean;
+  prescribedByDoctorId?: string;
+  prescribedAt?: string;
+  instructions?: string;
+  frequency?: MedicationFrequency;
+  times?: string[];
+  startDate?: string;
+  endDate?: string;
+  durationDays?: number;
+  active?: boolean;
+}
+
+export type MedicationFrequency = 'ONCE_DAILY' | 'TWICE_DAILY' | 'THRICE_DAILY' | 'CUSTOM';
+
+export type MedicationDoseStatus = 'PENDING' | 'TAKEN' | 'MISSED' | 'SKIPPED';
+
+export interface MedicationDoseScheduleItem {
+  doseId: string;
+  patientId: string;
+  medicationId: string;
+  medicationName: string;
+  dosage: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  scheduledAt: string;
+  status: MedicationDoseStatus;
+  takenAt?: string;
+  updatedAt?: string;
+}
+
+export interface MedicationAdherenceRecord {
+  doseId: string;
+  patientId: string;
+  medicationId: string;
+  scheduledAt: string;
+  status: MedicationDoseStatus;
+  takenAt?: string;
+  updatedAt: string;
+  updatedBy: 'PATIENT' | 'SYSTEM';
+}
+
+export interface MedicationMissedDoseAlert {
+  id: string;
+  doctorId: string;
+  patientId: string;
+  patientName: string;
+  doseId: string;
+  medicationName: string;
+  scheduledAt: string;
+  createdAt: string;
+  status: 'NEW' | 'ACKNOWLEDGED' | 'RESOLVED';
+}
+
+export interface PrescriptionMedicine {
+  name: string;
+  dosage: string;
+  frequency: string;
+  duration?: string;
+  notes?: string;
+}
+
+export interface PrescriptionOcrResult {
+  medicines: PrescriptionMedicine[];
+  confidenceScore?: number;
+  doctorName?: string;
+  patientName?: string;
+  date?: string;
+  summary?: string;
+}
+
+export interface NutritionMealItem {
+  name: string;
+  portion: string;
+  calories?: number;
+  notes?: string;
+  cuisineTag?: string;
+}
+
+export interface NutritionMealPlanDay {
+  day: number;
+  breakfast: NutritionMealItem[];
+  lunch: NutritionMealItem[];
+  snacks?: NutritionMealItem[];
+  dinner: NutritionMealItem[];
+  notes?: string;
+}
+
+export interface NutritionPlan {
+  generatedAt: string;
+  days: NutritionMealPlanDay[];
+  guidance?: {
+    focusAreas?: string[];
+    foodsToInclude?: string[];
+    foodsToLimit?: string[];
+    lifestyleTips?: string[];
+    hydrationTips?: string;
+    activityGuidance?: string;
+  };
+  riskAlignmentSummary?: string;
+  disclaimer?: string;
 }
 
 export interface SystemNotification {

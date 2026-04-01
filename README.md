@@ -139,7 +139,7 @@ Traditional healthcare systems often suffer from:
 ### Hosting / Deployment
 
 - **Frontend**: Vercel
-- **Backend**: (e.g., Render / Railway / Fly.io) – flexible, not tied to a single provider.
+- **Backend**: (e.g., Render / Fly.io / any Node host) - flexible, not tied to a single provider.
 - **Database**: SQLite is the current default (Prisma `provider = "sqlite"`). For production-grade deployments you can migrate to Postgres later (requires updating Prisma datasource + migrations).
 
 ---
@@ -466,7 +466,7 @@ Open this URL in your browser to use CareXAI.
 
 This section gives you a production path that keeps API calls and Socket.IO events in sync.
 
-### 13.1 Deploy Backend First (Render/Railway/Fly)
+### 13.1 Deploy Backend First (Render/Fly/Any Node Host)
 
 Set backend root to `server/` and configure:
 

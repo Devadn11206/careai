@@ -90,12 +90,45 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
     const [bookingType, setBookingType] = useState('Video Consultation');
     const [bookingSymptoms, setBookingSymptoms] = useState('');
     const [bookingLoading, setBookingLoading] = useState(false);
+    const [cancelingAppointmentId, setCancelingAppointmentId] = useState<string | null>(null);
     const [, setLastBookingMessage] = useState<string | null>(null);
 
     // Comm
     const [activeChatAppt, setActiveChatAppt] = useState<Appointment | null>(null);
     const [activeVideoCall, setActiveVideoCall] = useState<Appointment | null>(null);
     const [queueInfo, setQueueInfo] = useState<Record<string, { ahead: number; delayMinutes: number; status: Appointment['status'] }>>({});
+
+    const openDocument = (url: string) => {
+        if (!url) return;
+
+        if (url.startsWith('data:')) {
+            try {
+                const [meta, base64] = url.split(',');
+                if (!base64) return;
+                const mimeMatch = meta.match(/^data:(.*?);base64$/i);
+                const mime = mimeMatch?.[1] || 'application/octet-stream';
+                const binary = atob(base64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+                const blob = new Blob([bytes], { type: mime });
+                const blobUrl = URL.createObjectURL(blob);
+                window.open(blobUrl, '_blank', 'noopener,noreferrer');
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+                return;
+            } catch (err) {
+                console.error('Failed to open data URL document', err);
+                return;
+            }
+        }
+
+        window.open(url, '_blank', 'noopener,noreferrer');
+    };
+
+    const trendData = history.map((h, idx) => ({
+        timestamp: h.timestamp || `reading-${idx + 1}`,
+        systolicBP: Number.isFinite(h.systolicBP) ? h.systolicBP : 0,
+        glucose: Number.isFinite(h.glucose) ? h.glucose : 0,
+    }));
 
     const mapBackendDoctorToProfile = (d: BackendDoctor): DoctorProfile => ({
         id: d.id,
@@ -253,21 +286,30 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
         setLoading(true);
         try {
             const currentMetrics = { ...metrics };
+            const parsedAge = Number(user.age);
+            const safeAge = Number.isFinite(parsedAge) && parsedAge > 0 ? parsedAge : 40;
 
             const result = await BackendAPI.analyzeHealthRisk({
                 metrics: currentMetrics,
-                age: Number(user.age) || 0,
+                age: safeAge,
                 gender: user.gender,
             });
 
             setAiResult(result);
 
-            // Save full combined data via real backend
-            await BackendAPI.saveMyMetrics({
+            const capturedAt = new Date().toISOString();
+            const snapshot = {
                 ...currentMetrics,
-                timestamp: new Date().toISOString(),
-                ...result
-            });
+                timestamp: capturedAt,
+                ...result,
+            } as HealthMetrics;
+
+            // Save full combined data via real backend
+            await BackendAPI.saveMyMetrics(snapshot as HealthMetrics & { [key: string]: any });
+
+            // Keep local trend state in sync so charts update immediately.
+            setHistory((prev) => [...prev, snapshot]);
+            setMetrics((prev) => ({ ...prev, timestamp: capturedAt }));
 
             if (result.predictions?.some(p => p.riskLevel === 'High')) {
                 setShowEmergencyModal(true);
@@ -297,6 +339,7 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
 
             const consultationType = bookingType.toLowerCase().includes('video') ? 'VIDEO' : 'IN_PERSON';
             const latestVitals = history.length > 0 ? history[history.length - 1] : metrics;
+            const trendSource = history.length > 0 ? history : [metrics];
             const autoShare = {
                 currentVitals: {
                     systolicBP: latestVitals?.systolicBP,
@@ -306,13 +349,24 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                     cholesterol: latestVitals?.cholesterol,
                     timestamp: latestVitals?.timestamp,
                 },
-                vitalsTrend: history.slice(-5).map(h => ({
+                vitalsTrend: trendSource.map(h => ({
                     timestamp: h.timestamp,
                     systolicBP: h.systolicBP,
                     diastolicBP: h.diastolicBP,
                     glucose: h.glucose,
                     bmi: h.bmi,
                     cholesterol: h.cholesterol,
+                })),
+                history: trendSource.map(h => ({
+                    timestamp: h.timestamp,
+                    systolicBP: h.systolicBP,
+                    diastolicBP: h.diastolicBP,
+                    glucose: h.glucose,
+                    bmi: h.bmi,
+                    cholesterol: h.cholesterol,
+                    diabetesRisk: h.diabetesRisk,
+                    hypertensionRisk: h.hypertensionRisk,
+                    heartDiseaseRisk: h.heartDiseaseRisk,
                 })),
                 healthPassport: {
                     generatedDate: passportData?.generatedDate,
@@ -324,7 +378,39 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                     hypertensionRisk: aiResult.hypertensionRisk,
                     heartDiseaseRisk: aiResult.heartDiseaseRisk,
                 } : undefined,
-                documents: documents.slice(-10).map(doc => ({
+                aiAnalysis: aiResult ? {
+                    diabetesRisk: aiResult.diabetesRisk,
+                    hypertensionRisk: aiResult.hypertensionRisk,
+                    heartDiseaseRisk: aiResult.heartDiseaseRisk,
+                    explanation: aiResult.explanation,
+                    confidenceLevel: aiResult.confidenceLevel,
+                    keyFactors: aiResult.keyFactors,
+                    lifestyleRecommendations: aiResult.lifestyleRecommendations,
+                    predictions: aiResult.predictions,
+                } : undefined,
+                medications: medications.map((med) => ({
+                    id: med.id,
+                    name: med.name,
+                    dosage: med.dosage,
+                    time: med.time,
+                    instructions: med.instructions,
+                    frequency: med.frequency,
+                    times: med.times,
+                    startDate: med.startDate,
+                    endDate: med.endDate,
+                    durationDays: med.durationDays,
+                    active: med.active,
+                })),
+                patientProfile: {
+                    patientId: user.id,
+                    name: user.name,
+                    age: user.age,
+                    gender: user.gender,
+                    bloodGroup: user.bloodGroup,
+                    preferredLanguage: user.preferredLanguage,
+                    emergencyContact: user.emergencyContact,
+                },
+                documents: documents.slice(-50).map(doc => ({
                     name: doc.name,
                     type: doc.type,
                     date: doc.date,
@@ -360,6 +446,18 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
             setShowContactModal(false);
             alert("Emergency contact saved successfully.");
         } catch (e) { console.error(e); } finally { setSavingContact(false); }
+    };
+
+    const handleCancelAppointment = async (appointmentId: string) => {
+        setCancelingAppointmentId(appointmentId);
+        try {
+            const updated = await BackendAPI.updateAppointmentStatus({ appointmentId, status: 'CANCELLED' });
+            setAppointments((prev) => prev.map((appt) => (appt.id === updated.id ? updated : appt)));
+        } catch (e: any) {
+            alert(e?.message || 'Failed to cancel appointment.');
+        } finally {
+            setCancelingAppointmentId(null);
+        }
     };
 
     const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -484,36 +582,45 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
 
                     {/* Trends Chart */}
                     <motion.div variants={itemVariants}>
-                        {history.length > 1 && (
-                            <Card title="Vitals Trends" className="border-slate-100 dark:border-slate-800 shadow-sm">
-                                <div className="h-80 w-full mt-2">
-                                    <ResponsiveContainer width="100%" height="100%">
-                                        <AreaChart data={history} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                            <defs>
-                                                <linearGradient id="colorBP" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.2} />
-                                                    <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
-                                                </linearGradient>
-                                                <linearGradient id="colorGl" x1="0" y1="0" x2="0" y2="1">
-                                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                                                </linearGradient>
-                                            </defs>
-                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.5} />
-                                            <XAxis dataKey="timestamp" hide />
-                                            <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} />
-                                            <Tooltip
-                                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', background: 'rgba(255, 255, 255, 0.95)' }}
-                                                itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
-                                            />
-                                            <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                                            <Area type="monotone" name="Systolic BP" dataKey="systolicBP" stroke="#f43f5e" strokeWidth={3} fill="url(#colorBP)" activeDot={{ r: 6, strokeWidth: 0 }} />
-                                            <Area type="monotone" name="Glucose" dataKey="glucose" stroke="#10b981" strokeWidth={3} fill="url(#colorGl)" activeDot={{ r: 6, strokeWidth: 0 }} />
-                                        </AreaChart>
-                                    </ResponsiveContainer>
+                        <Card title="Vitals Trends" className="border-slate-100 dark:border-slate-800 shadow-sm">
+                            {trendData.length === 0 ? (
+                                <div className="py-10 text-center text-sm text-slate-500">
+                                    No vitals recorded yet. Run AI prediction to start your trend graph.
                                 </div>
-                            </Card>
-                        )}
+                            ) : (
+                                <>
+                                    <div className="h-80 w-full mt-2">
+                                        <ResponsiveContainer width="100%" height="100%">
+                                            <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                                <defs>
+                                                    <linearGradient id="colorBP" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.2} />
+                                                        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
+                                                    </linearGradient>
+                                                    <linearGradient id="colorGl" x1="0" y1="0" x2="0" y2="1">
+                                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+                                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                                    </linearGradient>
+                                                </defs>
+                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.5} />
+                                                <XAxis dataKey="timestamp" hide />
+                                                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                                                <Tooltip
+                                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', background: 'rgba(255, 255, 255, 0.95)' }}
+                                                    itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
+                                                />
+                                                <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                                                <Area type="monotone" name="Systolic BP" dataKey="systolicBP" stroke="#f43f5e" strokeWidth={3} fill="url(#colorBP)" activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false} />
+                                                <Area type="monotone" name="Glucose" dataKey="glucose" stroke="#10b981" strokeWidth={3} fill="url(#colorGl)" activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false} />
+                                            </AreaChart>
+                                        </ResponsiveContainer>
+                                    </div>
+                                    {trendData.length === 1 && (
+                                        <p className="mt-2 text-xs text-slate-500">One reading captured. Add one more to see trend direction.</p>
+                                    )}
+                                </>
+                            )}
+                        </Card>
                     </motion.div>
                 </div>
 
@@ -679,9 +786,15 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                                         </div>
                                     </div>
                                 </div>
-                                <a href={doc.url} target="_blank" className="text-xs font-bold text-slate-500 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 px-4 py-2 rounded-lg transition-colors border border-slate-100 dark:border-slate-700">
-                                    View
-                                </a>
+                                {doc.url ? (
+                                    <button type="button" onClick={() => openDocument(doc.url)} className="text-xs font-bold text-slate-500 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 px-4 py-2 rounded-lg transition-colors border border-slate-100 dark:border-slate-700">
+                                        View
+                                    </button>
+                                ) : (
+                                    <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
+                                        Re-upload
+                                    </span>
+                                )}
                             </div>
                         ))}
                     </div>
@@ -713,6 +826,18 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                                                 <p className="mt-2 text-xs text-slate-400 italic">
                                                     No doctor notes added for this visit yet.
                                                 </p>
+                                            )}
+                                            {(appt.status === 'SCHEDULED' || appt.status === 'PENDING') && (
+                                                <div className="mt-3 flex justify-end">
+                                                    <Button
+                                                        size="sm"
+                                                        variant="danger"
+                                                        onClick={() => handleCancelAppointment(appt.id)}
+                                                        isLoading={cancelingAppointmentId === appt.id}
+                                                    >
+                                                        Cancel Appointment
+                                                    </Button>
+                                                </div>
                                             )}
                                         </div>
                                     ))}
@@ -783,6 +908,13 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                                     <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Date</label>
                                     <input type="date" className="w-full p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500" value={bookingDate} onChange={e => setBookingDate(e.target.value)} />
                                 </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Consultation Type</label>
+                                    <select className="w-full p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500" value={bookingType} onChange={e => setBookingType(e.target.value)}>
+                                        <option value="Video Consultation">Video Consultation</option>
+                                        <option value="In-Person Consultation">In-Person Consultation</option>
+                                    </select>
+                                </div>
 
                                 {availableSlots.length > 0 && (
                                     <div>
@@ -796,6 +928,15 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                                         </div>
                                     </div>
                                 )}
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Symptoms / Notes for Doctor</label>
+                                    <textarea
+                                        className="w-full p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500 min-h-[88px]"
+                                        value={bookingSymptoms}
+                                        onChange={(e) => setBookingSymptoms(e.target.value)}
+                                        placeholder="Describe symptoms and concerns for this visit"
+                                    />
+                                </div>
                                 <div className="pt-4 flex gap-3">
                                     <Button className="flex-1" onClick={handleBookAppointment} disabled={!selectedSlotId} isLoading={bookingLoading}>Confirm Booking</Button>
                                     <Button variant="ghost" className="flex-1" onClick={() => setShowBookingModal(false)}>Cancel</Button>

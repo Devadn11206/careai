@@ -611,11 +611,45 @@ export const MockBackend = {
     }
   },
   
-  getPatientDocuments: async (patientId: string): Promise<Document[]> => getStored(KEYS.DOCUMENTS, {})[patientId] || [],
+  getPatientDocuments: async (patientId: string): Promise<Document[]> => {
+    const docsStore = getStored(KEYS.DOCUMENTS, {});
+    const docs: Document[] = docsStore[patientId] || [];
+
+    // Blob URLs are session-scoped and break after reload; clear legacy values.
+    let mutated = false;
+    const normalized = docs.map((d) => {
+      if (typeof d.url === 'string' && d.url.startsWith('blob:')) {
+        mutated = true;
+        return { ...d, url: '' };
+      }
+      return d;
+    });
+
+    if (mutated) {
+      docsStore[patientId] = normalized;
+      setStored(KEYS.DOCUMENTS, docsStore);
+    }
+
+    return normalized;
+  },
   uploadDocument: async (patientId: string, file: File, category: string = 'General'): Promise<Document> => {
     await new Promise(r => setTimeout(r, 500)); 
     const docsStore = getStored(KEYS.DOCUMENTS, {});
-    const newDoc: Document = { id: Math.random().toString(36).substring(7), name: file.name, date: new Date().toISOString().split('T')[0], type: file.type, url: URL.createObjectURL(file), category, size: (file.size / (1024 * 1024)).toFixed(2) + ' MB' };
+    const dataUrl = await new Promise<string>((resolve, reject) => {
+      const reader = new FileReader();
+      reader.onloadend = () => resolve(String(reader.result || ''));
+      reader.onerror = () => reject(new Error('Failed to read uploaded document'));
+      reader.readAsDataURL(file);
+    });
+    const newDoc: Document = {
+      id: Math.random().toString(36).substring(7),
+      name: file.name,
+      date: new Date().toISOString().split('T')[0],
+      type: file.type,
+      url: dataUrl,
+      category,
+      size: (file.size / (1024 * 1024)).toFixed(2) + ' MB',
+    };
     if (!docsStore[patientId]) docsStore[patientId] = [];
     docsStore[patientId].unshift(newDoc);
     setStored(KEYS.DOCUMENTS, docsStore);

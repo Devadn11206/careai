@@ -21,6 +21,94 @@ interface Props {
 type ViewMode = 'dashboard' | 'patients' | 'schedule' | 'settings' | 'analytics';
 type PatientTab = 'OVERVIEW' | 'HISTORY' | 'MEDS' | 'DOCUMENTS' | 'SUMMARIES' | 'NOTES';
 
+const parseSharedDocumentMeta = (content: string): { name: string; type: string; category?: string; date?: string } | null => {
+    if (!content || !content.startsWith('DOCUMENT SHARED:')) return null;
+    const raw = content.replace('DOCUMENT SHARED:', '').trim();
+    const parts = raw.split('|').map((p) => p.trim());
+    const name = parts[0] || 'Shared document';
+
+    const getValue = (prefix: string) => {
+        const found = parts.find((p) => p.startsWith(prefix));
+        return found ? found.replace(prefix, '').trim() : undefined;
+    };
+
+    return {
+        name,
+        type: getValue('Type:') || 'application/octet-stream',
+        category: getValue('Category:'),
+        date: getValue('Date:'),
+    };
+};
+
+const parseAutoSharedSnapshot = (content: string, fallbackIso: string): HealthMetrics | null => {
+    if (!content || !content.includes('AUTO-SHARED PATIENT SNAPSHOT')) return null;
+
+    const readNum = (label: string, fallback = 0): number => {
+        const line = content.split('\n').find((l) => l.includes(label));
+        if (!line) return fallback;
+        const m = line.match(/(-?\d+(?:\.\d+)?)/);
+        return m ? Number(m[1]) : fallback;
+    };
+
+    const bpLine = content.split('\n').find((l) => l.includes('- BP:')) || '';
+    const bpMatch = bpLine.match(/(\d+)\/(\d+)/);
+    const systolicBP = bpMatch ? Number(bpMatch[1]) : 0;
+    const diastolicBP = bpMatch ? Number(bpMatch[2]) : 0;
+
+    const diabetesRisk = readNum('Diabetes Risk:', 0);
+    const hypertensionRisk = readNum('Hypertension Risk:', 0);
+    const heartDiseaseRisk = readNum('Heart Disease Risk:', 0);
+
+    return {
+        systolicBP,
+        diastolicBP,
+        glucose: readNum('- Glucose:', 0),
+        bmi: readNum('- BMI:', 0),
+        cholesterol: readNum('- Cholesterol:', 0),
+        smoking: false,
+        activityLevel: 'Moderate',
+        timestamp: fallbackIso,
+        diabetesRisk,
+        hypertensionRisk,
+        heartDiseaseRisk,
+    };
+};
+
+type AutoSharedDashboardPayload = {
+    currentVitals?: Partial<HealthMetrics> & { timestamp?: string };
+    vitalsTrend?: Array<Partial<HealthMetrics> & { timestamp?: string }>;
+    history?: Array<Partial<HealthMetrics> & { timestamp?: string }>;
+    medications?: Array<Partial<Medication>>;
+    documents?: Array<Partial<Document>>;
+};
+
+const parseAutoSharedDashboardPayload = (content: string): AutoSharedDashboardPayload | null => {
+    const prefix = 'AUTO-SHARED PATIENT DASHBOARD JSON:';
+    if (!content || !content.startsWith(prefix)) return null;
+    try {
+        const raw = content.slice(prefix.length).trim();
+        if (!raw) return null;
+        const parsed = JSON.parse(raw);
+        return parsed && typeof parsed === 'object' ? parsed : null;
+    } catch {
+        return null;
+    }
+};
+
+const toHealthMetric = (entry: Partial<HealthMetrics> & { timestamp?: string }, fallbackIso: string): HealthMetrics => ({
+    systolicBP: Number(entry?.systolicBP) || 0,
+    diastolicBP: Number(entry?.diastolicBP) || 0,
+    glucose: Number(entry?.glucose) || 0,
+    bmi: Number(entry?.bmi) || 0,
+    cholesterol: Number(entry?.cholesterol) || 0,
+    smoking: Boolean(entry?.smoking),
+    activityLevel: entry?.activityLevel === 'Low' || entry?.activityLevel === 'High' ? entry.activityLevel : 'Moderate',
+    timestamp: entry?.timestamp || fallbackIso,
+    diabetesRisk: typeof entry?.diabetesRisk === 'number' ? entry.diabetesRisk : undefined,
+    hypertensionRisk: typeof entry?.hypertensionRisk === 'number' ? entry.hypertensionRisk : undefined,
+    heartDiseaseRisk: typeof entry?.heartDiseaseRisk === 'number' ? entry.heartDiseaseRisk : undefined,
+});
+
 const getDefaultSchedule = (): DaySchedule[] => [
     { day: 'Mon', available: true, startTime: '09:00', endTime: '17:00' },
     { day: 'Tue', available: true, startTime: '09:00', endTime: '17:00' },
@@ -86,6 +174,32 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
     const [slotDuration, setSlotDuration] = useState<number>(user.slotDuration || 30);
     const [maxPatients, setMaxPatients] = useState<number>(user.defaultMaxPatients || 1);
     const [savingConfig, setSavingConfig] = useState(false);
+
+    const openDocument = (url: string) => {
+        if (!url) return;
+
+        if (url.startsWith('data:')) {
+            try {
+                const [meta, base64] = url.split(',');
+                if (!base64) return;
+                const mimeMatch = meta.match(/^data:(.*?);base64$/i);
+                const mime = mimeMatch?.[1] || 'application/octet-stream';
+                const binary = atob(base64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+                const blob = new Blob([bytes], { type: mime });
+                const blobUrl = URL.createObjectURL(blob);
+                window.open(blobUrl, '_blank', 'noopener,noreferrer');
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+                return;
+            } catch (err) {
+                console.error('Failed to open data URL document', err);
+                return;
+            }
+        }
+
+        window.open(url, '_blank', 'noopener,noreferrer');
+    };
 
     const [ocrFile, setOcrFile] = useState<File | null>(null);
     const [ocrPreviewUrl, setOcrPreviewUrl] = useState<string | null>(null);
@@ -334,21 +448,9 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
 
             if (selectedPatient) {
                 // Keep the selected patient in sync with the latest merged list
-                const updatedProfile = mergedPatients.find(p => p.id === selectedPatient.id) || selectedPatient;
+                const updatedProfile = mergedPatients.find(p => p.id === selectedPatient.id);
                 if (updatedProfile) setSelectedPatient(updatedProfile);
-
-                const [hist, meds, docs, summaries] = await Promise.all([
-                    BackendAPI.getMyMetrics(selectedPatient.id).catch(() => []),
-                    BackendAPI.getMedicationOrders({ patientId: selectedPatient.id, active: 'true' }).catch(() => (
-                        MockBackend.getMedications(selectedPatient.id)
-                    )),
-                    MockBackend.getPatientDocuments(selectedPatient.id).catch(() => []),
-                    BackendAPI.getPatientConsultationSummaries(selectedPatient.id, 25).catch(() => []),
-                ]);
-                setPatientHistory(hist);
-                setPatientMeds(meds);
-                setPatientDocs(docs);
-                setConsultationSummariesByPatientId(prev => ({ ...prev, [selectedPatient.id]: summaries }));
+                await loadSelectedPatientFile(selectedPatient.id, appts);
             }
         };
 
@@ -417,6 +519,32 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
             unsubscribeApptUpdated();
         };
     }, [user.id, user.status, viewMode, manageDate, selectedPatient?.id]);
+
+    useEffect(() => {
+        let cancelled = false;
+
+        const run = async () => {
+            if (!selectedPatient) {
+                setPatientHistory([]);
+                setPatientMeds([]);
+                setPatientDocs([]);
+                return;
+            }
+
+            try {
+                await loadSelectedPatientFile(selectedPatient.id, appointments);
+            } catch {
+                if (!cancelled) {
+                    setPatientHistory([]);
+                    setPatientMeds([]);
+                    setPatientDocs([]);
+                }
+            }
+        };
+
+        run();
+        return () => { cancelled = true; };
+    }, [selectedPatient?.id, appointments]);
 
     // --- DERIVED CLINICAL SUMMARIES ---
 
@@ -498,6 +626,126 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
         const details = 'Multiple concurrent medicines can increase the chance of drug–drug interactions and side effects. Please cross-check this regimen using your usual interaction checker or institutional guidelines before adding new prescriptions or changing doses.';
 
         return { severity, summary, details };
+    };
+
+    const loadSelectedPatientFile = async (patientId: string, apptsSource: Appointment[]) => {
+        const relatedAppts = apptsSource.filter((a) => a.patientId === patientId);
+        const relatedApptsRecent = relatedAppts.slice(-10);
+        const chatLists = await Promise.all(
+            relatedApptsRecent.map((a) => BackendAPI.getChatMessages(a.id).catch(() => []))
+        );
+        const sharedMessages = chatLists.flat();
+        const sharedDashboardPayloads = sharedMessages
+            .map((m) => parseAutoSharedDashboardPayload(m.content || ''))
+            .filter((p): p is AutoSharedDashboardPayload => !!p);
+
+        const sharedDocs: Document[] = sharedMessages
+            .filter((m) => m.senderRole === UserRole.PATIENT && !!m.attachmentUrl)
+            .map((m) => {
+                const meta = parseSharedDocumentMeta(m.content || '');
+                return {
+                    id: `shared-${m.id}`,
+                    name: meta?.name || 'Shared Document',
+                    date: meta?.date || new Date(m.timestamp).toISOString().split('T')[0],
+                    type: meta?.type || 'application/octet-stream',
+                    url: m.attachmentUrl || '',
+                    category: meta?.category || 'Shared at booking',
+                };
+            });
+
+        const sharedDocsFromPayload: Document[] = sharedDashboardPayloads
+            .flatMap((payload) => Array.isArray(payload.documents) ? payload.documents : [])
+            .map((doc, idx) => ({
+                id: `payload-doc-${idx}-${doc?.name || 'unknown'}`,
+                name: doc?.name || 'Shared Document',
+                date: doc?.date || new Date().toISOString().split('T')[0],
+                type: doc?.type || 'application/octet-stream',
+                url: doc?.url || '',
+                category: doc?.category || 'Shared at booking',
+            }));
+
+        const sharedSnapshots: HealthMetrics[] = sharedMessages
+            .map((m) => parseAutoSharedSnapshot(m.content || '', m.timestamp))
+            .filter((m): m is HealthMetrics => !!m);
+
+        const sharedHistoryFromPayload: HealthMetrics[] = sharedDashboardPayloads.flatMap((payload) => {
+            const collection = [
+                ...(Array.isArray(payload.history) ? payload.history : []),
+                ...(Array.isArray(payload.vitalsTrend) ? payload.vitalsTrend : []),
+                ...(payload.currentVitals ? [payload.currentVitals] : []),
+            ];
+            return collection.map((entry) => toHealthMetric(entry, new Date().toISOString()));
+        });
+
+        const sharedMedsFromPayload: Medication[] = sharedDashboardPayloads
+            .flatMap((payload) => Array.isArray(payload.medications) ? payload.medications : [])
+            .map((med, idx) => ({
+                id: med?.id || `payload-med-${idx}`,
+                patientId,
+                name: med?.name || 'Shared Medication',
+                dosage: med?.dosage || 'Not specified',
+                time: med?.time || 'Custom',
+                taken: Boolean(med?.taken),
+                instructions: med?.instructions,
+                frequency: med?.frequency as MedicationFrequency | undefined,
+                times: Array.isArray(med?.times) ? med.times.filter(Boolean) as string[] : undefined,
+                startDate: med?.startDate,
+                endDate: med?.endDate,
+                durationDays: typeof med?.durationDays === 'number' ? med.durationDays : undefined,
+                active: typeof med?.active === 'boolean' ? med.active : undefined,
+            }));
+
+        const [hist, meds, docs, summaries] = await Promise.all([
+            BackendAPI.getMyMetrics(patientId).catch(() => []),
+            BackendAPI.getMedicationOrders({ patientId, active: 'true' }).catch(() => (
+                MockBackend.getMedications(patientId)
+            )),
+            MockBackend.getPatientDocuments(patientId).catch(() => []),
+            BackendAPI.getPatientConsultationSummaries(patientId, 25).catch(() => []),
+        ]);
+
+        const mergedHistory = [...hist, ...sharedSnapshots, ...sharedHistoryFromPayload].sort((a, b) => {
+            const at = new Date(a.timestamp || '').getTime();
+            const bt = new Date(b.timestamp || '').getTime();
+            return at - bt;
+        });
+
+        const dedupHistory: HealthMetrics[] = [];
+        const seenHistory = new Set<string>();
+        mergedHistory.forEach((h) => {
+            const key = `${h.timestamp}|${h.systolicBP}|${h.diastolicBP}|${h.glucose}|${h.bmi}|${h.cholesterol}`;
+            if (!seenHistory.has(key)) {
+                seenHistory.add(key);
+                dedupHistory.push(h);
+            }
+        });
+
+        const mergedDocs = [...docs, ...sharedDocs, ...sharedDocsFromPayload];
+        const dedupDocs: Document[] = [];
+        const seenDocs = new Set<string>();
+        mergedDocs.forEach((d) => {
+            const key = `${d.url}|${d.name}|${d.date}`;
+            if (!seenDocs.has(key)) {
+                seenDocs.add(key);
+                dedupDocs.push(d);
+            }
+        });
+
+        const mergedMeds = [...meds, ...sharedMedsFromPayload];
+        const dedupMeds: Medication[] = [];
+        const seenMeds = new Set<string>();
+        mergedMeds.forEach((m) => {
+            const key = `${m.name}|${m.dosage}|${(m.times || []).join(',')}|${m.startDate || ''}|${m.endDate || ''}`;
+            if (!seenMeds.has(key)) {
+                seenMeds.add(key);
+                dedupMeds.push(m);
+            }
+        });
+
+        setPatientHistory(dedupHistory);
+        setPatientMeds(dedupMeds);
+        setPatientDocs(dedupDocs);
+        setConsultationSummariesByPatientId(prev => ({ ...prev, [patientId]: summaries }));
     };
 
     useEffect(() => {
@@ -872,6 +1120,11 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                             <p className="text-indigo-100/90 text-xs mt-2 font-semibold">
                                                 Queue: {getAhead(nextAppt.id)} ahead • ~{getDelayMinutes(nextAppt.id)} min delay
                                             </p>
+                                            {nextAppt.symptoms && (
+                                                <p className="text-indigo-50/95 text-xs mt-2 max-w-xl">
+                                                    Symptoms: {nextAppt.symptoms}
+                                                </p>
+                                            )}
                                         </div>
                                         <div className="bg-white/10 backdrop-blur-md px-5 py-3 rounded-2xl text-center border border-white/20 shadow-lg">
                                             <p className="text-xs font-bold uppercase opacity-80">Token</p>
@@ -936,7 +1189,20 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                         )}
                                         <Button variant="outline" className="text-white border-white/30 hover:bg-white/10 rounded-xl" onClick={() => {
                                             const p = patients.find(pat => pat.id === nextAppt.patientId);
-                                            if (p) { setSelectedPatient(p); setViewMode('patients'); }
+                                            const fallbackPatient: PatientProfile = {
+                                                id: nextAppt.patientId,
+                                                name: nextAppt.patientName,
+                                                email: `${nextAppt.patientId}@carexai.local`,
+                                                role: UserRole.PATIENT,
+                                                age: 0,
+                                                gender: 'Other',
+                                                riskStatus: 'STABLE',
+                                                lastVisit: nextAppt.date,
+                                                assignedDoctorId: user.id,
+                                                sharedWithDoctors: [user.id],
+                                            };
+                                            setSelectedPatient(p || fallbackPatient);
+                                            setViewMode('patients');
                                         }}>
                                             View Patient File
                                         </Button>
@@ -972,6 +1238,11 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                                     </span>
                                                 )}
                                             </p>
+                                            {appt.symptoms && (
+                                                <p className="text-[11px] text-slate-500 mt-1 line-clamp-1">
+                                                    Symptoms: {appt.symptoms}
+                                                </p>
+                                            )}
                                         </div>
                                         <div className="flex gap-2 items-center">
                                             {appt.status === 'COMPLETED' ? (
@@ -1023,7 +1294,20 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                                     )}
                                                     <Button size="sm" variant="ghost" className="h-8 text-xs px-3" onClick={() => {
                                                         const p = patients.find(pat => pat.id === appt.patientId);
-                                                        if (p) { setSelectedPatient(p); setViewMode('patients'); }
+                                                        const fallbackPatient: PatientProfile = {
+                                                            id: appt.patientId,
+                                                            name: appt.patientName,
+                                                            email: `${appt.patientId}@carexai.local`,
+                                                            role: UserRole.PATIENT,
+                                                            age: 0,
+                                                            gender: 'Other',
+                                                            riskStatus: 'STABLE',
+                                                            lastVisit: appt.date,
+                                                            assignedDoctorId: user.id,
+                                                            sharedWithDoctors: [user.id],
+                                                        };
+                                                        setSelectedPatient(p || fallbackPatient);
+                                                        setViewMode('patients');
                                                     }}>View File</Button>
                                                 </>
                                             )}
@@ -2003,7 +2287,11 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                                     <div key={doc.id} className="border border-slate-200 dark:border-slate-700 rounded-xl p-4 hover:shadow-md transition-shadow bg-white dark:bg-slate-800">
                                         <div className="flex items-start justify-between mb-2">
                                             <span className="text-2xl">{doc.type.includes('pdf') ? '📄' : '🖼️'}</span>
-                                            <a href={doc.url} target="_blank" rel="noreferrer" className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded font-bold hover:bg-blue-100">View</a>
+                                            {doc.url ? (
+                                                <button type="button" onClick={() => openDocument(doc.url)} className="text-xs bg-blue-50 text-blue-600 px-2 py-1 rounded font-bold hover:bg-blue-100">View</button>
+                                            ) : (
+                                                <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-1 rounded font-bold">Re-upload</span>
+                                            )}
                                         </div>
                                         <p className="font-bold text-sm text-slate-800 dark:text-white truncate" title={doc.name}>{doc.name}</p>
                                         <p className="text-xs text-slate-500 mt-1">{doc.date} • {doc.category || 'General'}</p>

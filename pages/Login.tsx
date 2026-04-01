@@ -2,7 +2,7 @@
 import React, { Suspense, useState } from 'react';
 import { User, UserRole } from '../types';
 import { MockBackend } from '../services/mockBackend';
-import { BackendAPI } from '../services/apiClient';
+import { BackendAPI, setToken } from '../services/apiClient';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { LoginCharacter, CharacterState } from '../components/LoginCharacter';
 
@@ -90,6 +90,14 @@ const EyeIcon = ({ open }: { open: boolean }) => {
   );
 };
 
+const fileToDataUrl = (file: File): Promise<string> =>
+  new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(String(reader.result || ''));
+    reader.onerror = () => reject(new Error('Failed to read verification document'));
+    reader.readAsDataURL(file);
+  });
+
 export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const reduceMotion = useReducedMotion();
   const [role, setRole] = useState<RoleType>('PATIENT');
@@ -172,7 +180,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       setCharacterState('SUCCESS');
       setTimeout(() => onLogin(finalUser), 1500); // Delay to show success animation
     } catch (err) {
-      setError('An error occurred. Please try again.');
+      setError((err as any)?.message || 'An error occurred. Please try again.');
       setCharacterState('ERROR');
       setLoading(false);
     }
@@ -190,8 +198,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         return;
       }
     } else if (role === 'DOCTOR') {
-      if (!docName || !docEmail || !docPassword || !docSpec || !docRegNo) {
-        setError('Please fill in all required doctor details.');
+      if (!docName || !docEmail || !docPassword || !docSpec || !docRegNo || !docFile) {
+        setError('Please fill all doctor details and upload certificate/license.');
+        setCharacterState('ERROR');
+        return;
+      }
+      if (docFile.size > 5 * 1024 * 1024) {
+        setError('Certificate/license file must be under 5MB.');
         setCharacterState('ERROR');
         return;
       }
@@ -226,6 +239,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           // Ignore local mock registration failures
         }
       } else if (role === 'DOCTOR') {
+        const verificationDocumentUrl = await fileToDataUrl(docFile as File);
+
         // First create the doctor in the real backend (authoritative auth)
         const result = await BackendAPI.register({
           name: docName,
@@ -237,6 +252,8 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
           registrationNumber: docRegNo,
           medicalCouncil: docCouncil,
           experienceYears: parseInt(docExp || '0', 10) || 0,
+          verificationDocumentUrl,
+          verificationDocumentName: (docFile as File).name,
         });
 
         // Then mirror this doctor into the local mock backend and
@@ -273,6 +290,19 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       if (!backendUser) throw new Error('Registration failed.');
 
       setCharacterState('SUCCESS');
+      if (role === 'DOCTOR') {
+        setToken(null);
+        setTimeout(() => {
+          setLoading(false);
+          setMode('LOGIN');
+          setRole('DOCTOR');
+          setPassword('');
+          setDocPassword('');
+          setError('Registration submitted. Admin verification is required before doctor login.');
+        }, 1200);
+        return;
+      }
+
       setTimeout(() => onLogin(backendUser as User), 1500);
     } catch (err: any) {
       setError(err.message || 'Registration failed.');
@@ -573,8 +603,9 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                       }
                     />
                     <div className="mb-4">
-                      <label className="text-xs font-bold text-slate-500 uppercase ml-1">Medical Certificate</label>
-                      <input type="file" className="mt-1 block w-full text-sm text-slate-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary-50 dark:file:bg-primary-900 file:text-primary-700 dark:file:text-primary-200 hover:file:bg-primary-100" onChange={e => setDocFile(e.target.files ? e.target.files[0] : null)} />
+                      <label className="text-xs font-bold text-slate-500 uppercase ml-1">Medical Certificate / License *</label>
+                      <input type="file" accept=".pdf,.png,.jpg,.jpeg" className="mt-1 block w-full text-sm text-slate-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary-50 dark:file:bg-primary-900 file:text-primary-700 dark:file:text-primary-200 hover:file:bg-primary-100" onChange={e => setDocFile(e.target.files ? e.target.files[0] : null)} />
+                      <p className="mt-1 text-[11px] text-slate-500">Required for admin verification. PDF/JPG/PNG, max 5MB.</p>
                     </div>
                   </div>
                 )}

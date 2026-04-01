@@ -35,6 +35,32 @@ export const AdminDashboard: React.FC = () => {
   const [selectedDoctor, setSelectedDoctor] = useState<DoctorProfile | null>(null);
   const [remarks, setRemarks] = useState('');
 
+    const openDocument = (url: string) => {
+        if (!url) return;
+
+        if (url.startsWith('data:')) {
+            try {
+                const [meta, base64] = url.split(',');
+                if (!base64) return;
+                const mimeMatch = meta.match(/^data:(.*?);base64$/i);
+                const mime = mimeMatch?.[1] || 'application/octet-stream';
+                const binary = atob(base64);
+                const bytes = new Uint8Array(binary.length);
+                for (let i = 0; i < binary.length; i += 1) bytes[i] = binary.charCodeAt(i);
+                const blob = new Blob([bytes], { type: mime });
+                const blobUrl = URL.createObjectURL(blob);
+                window.open(blobUrl, '_blank', 'noopener,noreferrer');
+                setTimeout(() => URL.revokeObjectURL(blobUrl), 60_000);
+                return;
+            } catch (err) {
+                console.error('Failed to open data URL document', err);
+                return;
+            }
+        }
+
+        window.open(url, '_blank', 'noopener,noreferrer');
+    };
+
   const refreshData = async () => {
       const [s, u, a, l, c, mockDoctors, docs, al, backendDoctors] = await Promise.all([
           MockBackend.getAdminStats(),
@@ -64,6 +90,7 @@ export const AdminDashboard: React.FC = () => {
           qualification: d.qualification || '',
           registrationNumber: d.registrationNumber || '',
           medicalCouncil: d.medicalCouncil,
+          verificationDocumentUrl: d.verificationDocumentUrl,
           status: d.status || DoctorStatus.PENDING,
           rating: d.rating,
           bio: '',
@@ -97,6 +124,17 @@ export const AdminDashboard: React.FC = () => {
                 return [...prev, appt];
             });
         });
+        const unsubscribeApptUpdated = BackendAPI.onAppointmentUpdated((appt) => {
+            setAppointments((prev) => {
+                const idx = prev.findIndex(a => a.id === appt.id);
+                if (idx >= 0) {
+                    const next = [...prev];
+                    next[idx] = appt;
+                    return next;
+                }
+                return [...prev, appt];
+            });
+        });
 
         const unsubscribeDoctor = BackendAPI.onDoctorUpdated((doctor) => {
             const profile: DoctorProfile = {
@@ -109,6 +147,7 @@ export const AdminDashboard: React.FC = () => {
                 qualification: doctor.qualification || '',
                 registrationNumber: doctor.registrationNumber || '',
                 medicalCouncil: doctor.medicalCouncil,
+                verificationDocumentUrl: doctor.verificationDocumentUrl,
                 status: doctor.status || DoctorStatus.PENDING,
                 rating: doctor.rating,
                 bio: '',
@@ -144,6 +183,7 @@ export const AdminDashboard: React.FC = () => {
     return () => {
                 unsubscribeMock();
                 unsubscribeSocket();
+                                unsubscribeApptUpdated();
                 unsubscribeDoctor();
         window.removeEventListener('hashchange', handleHashChange);
     };
@@ -437,7 +477,9 @@ export const AdminDashboard: React.FC = () => {
                               <td className="px-6 py-4">
                                   <span className={`text-[10px] px-2 py-1 rounded font-bold uppercase ${
                                       appt.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' :
+                                      appt.status === 'IN_PROGRESS' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' :
                                       appt.status === 'COMPLETED' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
+                                      appt.status === 'CANCELLED' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-300' :
                                       'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
                                   }`}>{appt.status}</span>
                               </td>
@@ -479,7 +521,11 @@ export const AdminDashboard: React.FC = () => {
                                   <td className="px-6 py-4"><span className="bg-slate-100 dark:bg-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded">{doc.category || 'General'}</span></td>
                                   <td className="px-6 py-4 text-slate-500 font-mono text-xs">{doc.size}</td>
                                   <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                      <a href={doc.url} download={doc.name} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 text-xs font-bold">View</a>
+                                                                            {doc.url ? (
+                                                                                <button type="button" onClick={() => openDocument(doc.url)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 text-xs font-bold">View</button>
+                                                                            ) : (
+                                                                                <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-1 rounded font-bold">Re-upload</span>
+                                                                            )}
                                       <button onClick={() => handleDeleteDocument(doc.patientId, doc.id)} className="text-red-500 hover:text-red-700 text-xs font-bold">Delete</button>
                                   </td>
                               </tr>

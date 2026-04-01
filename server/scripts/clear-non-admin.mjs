@@ -3,53 +3,45 @@ import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
 
-const OWNER_ADMIN_EMAIL = process.env.OWNER_ADMIN_EMAIL || 'ddnandu3@gmail.com';
-
 async function main() {
-  console.log('Clearing all users and data except owner admin:', OWNER_ADMIN_EMAIL);
-
-  const ownerAdmin = await prisma.user.findUnique({ where: { email: OWNER_ADMIN_EMAIL } });
-  if (!ownerAdmin) {
-    console.error('Owner admin not found. Make sure the server has run once to seed it.');
-    return;
-  }
-
-  const ownerId = ownerAdmin.id;
+  console.log('Clearing all users and data except admin users...');
 
   // Delete child records first to satisfy foreign key constraints
+  console.log('Deleting medication alerts...');
+  await prisma.medicationMissedDoseAlert.deleteMany({});
+
+  console.log('Deleting medication adherence...');
+  await prisma.medicationAdherence.deleteMany({});
+
+  console.log('Deleting medication orders...');
+  await prisma.medicationOrder.deleteMany({});
+
+  console.log('Deleting consultation summaries...');
+  await prisma.consultationSummary.deleteMany({});
+
   console.log('Deleting chat messages...');
-  await prisma.chatMessage.deleteMany({ where: { senderId: { not: ownerId } } });
+  await prisma.chatMessage.deleteMany({});
 
   console.log('Deleting health metrics...');
-  await prisma.healthMetric.deleteMany({ where: { patientId: { not: ownerId } } });
-
-  console.log('Deleting time slots...');
-  await prisma.timeSlot.deleteMany({ where: { doctorId: { not: ownerId } } });
-
-  console.log('Deleting doctor schedules...');
-  await prisma.doctorSchedule.deleteMany({ where: { doctorId: { not: ownerId } } });
+  await prisma.healthMetric.deleteMany({});
 
   console.log('Deleting appointments...');
-  await prisma.appointment.deleteMany({
-    where: {
-      OR: [
-        { patientId: { not: ownerId } },
-        { doctorId: { not: ownerId } },
-      ],
-    },
-  });
+  await prisma.appointment.deleteMany({});
 
-  console.log('Deleting users (all except owner admin)...');
+  console.log('Deleting time slots...');
+  await prisma.timeSlot.deleteMany({});
+
+  console.log('Deleting doctor schedules...');
+  await prisma.doctorSchedule.deleteMany({});
+
+  console.log('Deleting users (all non-admin users)...');
   await prisma.user.deleteMany({
     where: {
-      OR: [
-        { id: { not: ownerId } },
-        { email: { not: OWNER_ADMIN_EMAIL } },
-      ],
+      role: { not: 'ADMIN' },
     },
   });
 
-  console.log('Done. Only the owner admin user should remain.');
+  console.log('Done. Only admin user accounts should remain.');
 }
 
 main()

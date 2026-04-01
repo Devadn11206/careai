@@ -6,6 +6,8 @@ import {
   ConsultationSummary,
   DoctorStatus,
   HealthMetrics,
+  Medication,
+  MedicationMissedDoseAlert,
   PresenceUpdate,
   TimeSlot,
   TypingEvent,
@@ -97,7 +99,7 @@ export interface LoginResponseUser {
 }
 
 interface LoginResponse {
-  token: string;
+  token?: string | null;
   user: LoginResponseUser;
 }
 
@@ -121,6 +123,8 @@ export interface BackendDoctor {
   qualification?: string;
   registrationNumber?: string;
   medicalCouncil?: string;
+  verificationDocumentUrl?: string;
+  verificationDocumentName?: string;
   rating?: number;
   status?: DoctorStatus;
   hasSchedule?: boolean;
@@ -145,6 +149,17 @@ export interface AppointmentAutoSharePayload {
     bmi?: number;
     cholesterol?: number;
   }>;
+  history?: Array<{
+    timestamp?: string;
+    systolicBP?: number;
+    diastolicBP?: number;
+    glucose?: number;
+    bmi?: number;
+    cholesterol?: number;
+    diabetesRisk?: number;
+    hypertensionRisk?: number;
+    heartDiseaseRisk?: number;
+  }>;
   healthPassport?: {
     generatedDate?: string;
     bloodGroup?: string;
@@ -154,6 +169,46 @@ export interface AppointmentAutoSharePayload {
     diabetesRisk?: number;
     hypertensionRisk?: number;
     heartDiseaseRisk?: number;
+  };
+  aiAnalysis?: {
+    diabetesRisk?: number;
+    hypertensionRisk?: number;
+    heartDiseaseRisk?: number;
+    explanation?: string;
+    confidenceLevel?: string;
+    keyFactors?: string[];
+    lifestyleRecommendations?: string[];
+    predictions?: Array<{
+      condition?: string;
+      probability?: number;
+      riskLevel?: string;
+    }>;
+  };
+  medications?: Array<{
+    id?: string;
+    name?: string;
+    dosage?: string;
+    time?: string;
+    instructions?: string;
+    frequency?: string;
+    times?: string[];
+    startDate?: string;
+    endDate?: string;
+    durationDays?: number;
+    active?: boolean;
+  }>;
+  patientProfile?: {
+    patientId?: string;
+    name?: string;
+    age?: number;
+    gender?: string;
+    bloodGroup?: string;
+    preferredLanguage?: string;
+    emergencyContact?: {
+      name?: string;
+      relationship?: string;
+      phone?: string;
+    };
   };
   documents?: Array<{
     name?: string;
@@ -175,13 +230,19 @@ export const BackendAPI = {
     registrationNumber?: string;
     medicalCouncil?: string;
     experienceYears?: number;
+    verificationDocumentUrl?: string;
+    verificationDocumentName?: string;
   }): Promise<LoginResponse> {
     const result = await api<LoginResponse>('/auth/register', {
       method: 'POST',
       body: JSON.stringify(input),
     });
-    setToken(result.token);
-    ensureSocket();
+    if (result.token) {
+      setToken(result.token);
+      ensureSocket();
+    } else {
+      setToken(null);
+    }
     return result;
   },
 
@@ -349,6 +410,46 @@ export const BackendAPI = {
   async getPatientConsultationSummaries(patientId: string, limit = 10): Promise<ConsultationSummary[]> {
     return api<ConsultationSummary[]>(`/patients/${encodeURIComponent(patientId)}/ai-summaries?limit=${encodeURIComponent(String(limit))}`, {
       method: 'GET',
+    });
+  },
+
+  async getMedicationOrders(input: { patientId?: string; active?: 'true' | 'false' }): Promise<Medication[]> {
+    const params = new URLSearchParams();
+    if (input.patientId) params.set('patientId', input.patientId);
+    if (input.active) params.set('active', input.active);
+    const query = params.toString();
+    return api<Medication[]>(`/medications${query ? `?${query}` : ''}`, { method: 'GET' });
+  },
+
+  async createMedicationOrder(input: {
+    patientId: string;
+    name: string;
+    dosage: string;
+    frequency?: 'ONCE_DAILY' | 'TWICE_DAILY' | 'THRICE_DAILY' | 'CUSTOM';
+    times?: string[];
+    startDate?: string;
+    durationDays?: number;
+    instructions?: string;
+  }): Promise<Medication> {
+    return api<Medication>('/medications', {
+      method: 'POST',
+      body: JSON.stringify(input),
+    });
+  },
+
+  async deleteMedicationOrder(medicationId: string): Promise<void> {
+    await api<void>(`/medications/${encodeURIComponent(medicationId)}`, {
+      method: 'DELETE',
+    });
+  },
+
+  async getDoctorMedicationAlerts(): Promise<MedicationMissedDoseAlert[]> {
+    return api<MedicationMissedDoseAlert[]>('/doctor/medication-alerts', { method: 'GET' });
+  },
+
+  async acknowledgeDoctorMedicationAlert(alertId: string): Promise<void> {
+    await api<void>(`/doctor/medication-alerts/${encodeURIComponent(alertId)}/ack`, {
+      method: 'PATCH',
     });
   },
 
