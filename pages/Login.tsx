@@ -1,10 +1,11 @@
 
-import React, { Suspense, useState } from 'react';
+import React, { Suspense, useRef, useState } from 'react';
 import { User, UserRole } from '../types';
 import { MockBackend } from '../services/mockBackend';
 import { BackendAPI, setToken } from '../services/apiClient';
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { LoginCharacter, CharacterState } from '../components/LoginCharacter';
+import { HoloBackdrop3D } from '../components/visuals/HoloBackdrop3D';
 
 const BeatingHeart3D = React.lazy(() => import('../components/visuals/BeatingHeart3D'));
 
@@ -117,6 +118,18 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
   const [characterState, setCharacterState] = useState<CharacterState>('IDLE');
+  const formPanelRef = useRef<HTMLDivElement>(null);
+
+  const handleFormTilt = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!formPanelRef.current) return;
+    const r = formPanelRef.current.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width - 0.5) * 12;
+    const y = ((e.clientY - r.top) / r.height - 0.5) * -12;
+    formPanelRef.current.style.transform = `perspective(1200px) rotateY(${x}deg) rotateX(${y}deg)`;
+  };
+  const handleFormLeave = () => {
+    if (formPanelRef.current) formPanelRef.current.style.transform = 'perspective(1200px) rotateY(0deg) rotateX(0deg)';
+  };
 
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -165,17 +178,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         }
       }
       setCharacterState('SUCCESS');
-<<<<<<< HEAD
       setTimeout(() => onLogin(finalUser), 1500); // Delay to show success animation
     } catch (err) {
       setError((err as any)?.message || 'An error occurred. Please try again.');
       setCharacterState('ERROR');
       setLoading(false);
-=======
-      setTimeout(() => onLogin(finalUser), 1500);
-    } catch {
-      setError('An error occurred. Please try again.'); setCharacterState('ERROR'); setLoading(false);
->>>>>>> 141877e (feat: futuristic UI/UX redesign — Bioluminescent Dark Healthcare OS)
     }
   };
 
@@ -184,7 +191,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
     if (role === 'PATIENT') {
       if (!regName || !regEmail || !regPassword || !regAge) { setError('Please fill in all required patient details.'); setCharacterState('ERROR'); return; }
     } else if (role === 'DOCTOR') {
-<<<<<<< HEAD
       if (!docName || !docEmail || !docPassword || !docSpec || !docRegNo || !docFile) {
         setError('Please fill all doctor details and upload certificate/license.');
         setCharacterState('ERROR');
@@ -195,9 +201,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         setCharacterState('ERROR');
         return;
       }
-=======
-      if (!docName || !docEmail || !docPassword || !docSpec || !docRegNo) { setError('Please fill in all required doctor details.'); setCharacterState('ERROR'); return; }
->>>>>>> 141877e (feat: futuristic UI/UX redesign — Bioluminescent Dark Healthcare OS)
     }
     setLoading(true);
     try {
@@ -207,7 +210,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         backendUser = result.user as unknown as User;
         try { await MockBackend.registerPatient(regName, regEmail, regPassword, parseInt(regAge, 10) || 0, regGender, regBloodGroup); } catch {}
       } else if (role === 'DOCTOR') {
-<<<<<<< HEAD
         const verificationDocumentUrl = await fileToDataUrl(docFile as File);
 
         // First create the doctor in the real backend (authoritative auth)
@@ -227,9 +229,6 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
         // Then mirror this doctor into the local mock backend and
         // use that richer profile (with status/schedule) for the UI session.
-=======
-        const result = await BackendAPI.register({ name: docName, email: docEmail, password: docPassword, role: UserRole.DOCTOR, specialization: docSpec, qualification: docQual, registrationNumber: docRegNo, medicalCouncil: docCouncil, experienceYears: parseInt(docExp || '0', 10) || 0 });
->>>>>>> 141877e (feat: futuristic UI/UX redesign — Bioluminescent Dark Healthcare OS)
         try {
           const localDoctor = await MockBackend.registerDoctor(docName, docEmail, docPassword, docSpec, docQual, docRegNo, parseInt(docExp || '0', 10) || 0, docCouncil, docFile || undefined);
           backendUser = { ...(localDoctor as any), ...(result.user as any), id: result.user.id, email: result.user.email, role: result.user.role, name: result.user.name, status: (result.user as any).status ?? (localDoctor as any).status } as User;
@@ -280,11 +279,14 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       className="min-h-screen flex font-sans overflow-hidden relative"
       style={{ background: '#050A14' }}
     >
-      {/* Ambient background */}
+      <HoloBackdrop3D className="opacity-75" intensity={1} palette={role === 'DOCTOR' ? ['#00FFB3', '#00D4FF', '#7B61FF'] : role === 'ADMIN' ? ['#FF006E', '#00D4FF', '#00FFB3'] : ['#00D4FF', '#00FFB3', '#7B61FF']} />
+
+      {/* Drifting orbs */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute inset-0 grid-dot-bg opacity-20" />
-        <div className="absolute top-0 left-0 w-[500px] h-[500px] rounded-full blur-[120px]" style={{ background: `${roleConf.color}08`, transition: 'background 0.5s ease' }} />
-        <div className="absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full blur-[100px]" style={{ background: `${roleConf.color}05`, transition: 'background 0.5s ease' }} />
+        <div className="orb-1 absolute top-0 left-0 w-[500px] h-[500px] rounded-full blur-[120px]" style={{ background: `${roleConf.color}08`, transition: 'background 0.5s ease' }} />
+        <div className="orb-2 absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full blur-[100px]" style={{ background: `${roleConf.color}05`, transition: 'background 0.5s ease' }} />
+        <div className="orb-3 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] rounded-full blur-[140px]" style={{ background: 'rgba(123,97,255,0.04)' }} />
+        <div className="orb-4 absolute top-1/4 right-1/4 w-[200px] h-[200px] rounded-full blur-[80px]" style={{ background: 'rgba(0,207,255,0.04)' }} />
       </div>
 
       {/* LEFT: Holographic panel */}
@@ -293,8 +295,10 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         animate={{ opacity: 1 }}
         transition={{ duration: 1 }}
         className="hidden lg:flex lg:w-[50%] relative items-center justify-center overflow-hidden flex-col z-10"
-        style={{ background: 'rgba(5,10,20,0.5)', borderRight: '1px solid rgba(0,212,255,0.08)' }}
+        style={{ background: 'rgba(5,10,20,0.42)', borderRight: '1px solid rgba(0,212,255,0.08)' }}
       >
+        <div className="absolute inset-0 bg-[linear-gradient(145deg,rgba(0,212,255,0.08),transparent_45%,rgba(0,255,179,0.08))]" />
+
         {/* 3D Heart */}
         <div className="absolute inset-0 pointer-events-none flex items-center justify-center opacity-80">
           <Suspense fallback={<div className="w-[480px] h-[480px] rounded-full" style={{ background: 'rgba(0,212,255,0.03)' }} />}>
@@ -346,7 +350,11 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
       </motion.div>
 
       {/* RIGHT: Auth form */}
-      <div className="w-full lg:w-[50%] flex flex-col justify-center items-center p-6 md:p-12 overflow-y-auto z-10 relative">
+      <div
+        className="w-full lg:w-[50%] flex flex-col justify-center items-center p-6 md:p-12 overflow-y-auto z-10 relative"
+        onMouseMove={handleFormTilt}
+        onMouseLeave={handleFormLeave}
+      >
 
         {/* Mobile logo */}
         <div className="lg:hidden mb-8 text-center">
@@ -360,10 +368,12 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         </div>
 
         <motion.div
+          ref={formPanelRef}
           initial={{ opacity: 0, y: 20, scale: 0.98 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.55, ease: 'easeOut' }}
           className="w-full max-w-md"
+          style={{ transition: 'transform 0.15s ease-out' }}
         >
           {/* Header */}
           <AnimatePresence mode="wait" initial={false}>
@@ -386,8 +396,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
           {/* Role tabs */}
           <div
-            className="flex p-1 rounded-2xl mb-8 relative"
-            style={{ background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.06)' }}
+            className="flex p-1 rounded-[24px] mb-8 relative glass-shell"
           >
             {/* Animated pill */}
             <motion.div
@@ -420,12 +429,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
           {/* Form card */}
           <div
-            className="rounded-2xl p-7"
-            style={{
-              background: 'rgba(255,255,255,0.03)',
-              border: '1px solid rgba(255,255,255,0.07)',
-              backdropFilter: 'blur(20px)',
-            }}
+            className="rounded-[28px] p-7 border-glow-cycle glass-shell depth-card"
           >
             <form onSubmit={mode === 'LOGIN' ? handleLogin : handleRegister}>
 
@@ -510,111 +514,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                         />
                       </div>
                     </div>
-<<<<<<< HEAD
-                    <div className="relative mb-5">
-                      <div className="absolute top-4 left-4 text-slate-400"><span className="text-lg">🩸</span></div>
-                      <select className="w-full bg-slate-50 dark:bg-slate-800 border-2 border-slate-100 dark:border-slate-700 rounded-xl py-3.5 pl-12 pr-4 outline-none text-slate-700 dark:text-slate-100 font-medium appearance-none" value={regBloodGroup} onChange={e => setRegBloodGroup(e.target.value)}>
-                        <option value="A+">A+</option>
-                        <option value="A-">A-</option>
-                        <option value="B+">B+</option>
-                        <option value="B-">B-</option>
-                        <option value="O+">O+</option>
-                        <option value="O-">O-</option>
-                        <option value="AB+">AB+</option>
-                        <option value="AB-">AB-</option>
-                      </select>
-                      <label className="absolute left-12 -top-2.5 bg-white dark:bg-slate-900 px-2 text-xs font-bold text-primary-700 dark:text-primary-300">Blood Group</label>
-                    </div>
-                    <FloatingInput label="Email" type="email" value={regEmail} onChange={(e: any) => setRegEmail(e.target.value)} icon={<span className="text-lg">✉️</span>} onFocus={() => setCharacterState('WATCHING')} onBlur={() => setCharacterState('IDLE')} />
-                    <FloatingInput
-                      label="Password"
-                      type={showRegPassword ? 'text' : 'password'}
-                      value={regPassword}
-                      onChange={(e: any) => setRegPassword(e.target.value)}
-                      icon={<span className="text-lg">🔒</span>}
-                      onFocus={() => setCharacterState('HIDING')}
-                      onBlur={() => setCharacterState('IDLE')}
-                      rightAdornment={
-                        <motion.button
-                          type="button"
-                          onClick={() => setShowRegPassword((s) => !s)}
-                          whileHover={reduceMotion ? undefined : { scale: 1.06 }}
-                          whileTap={reduceMotion ? undefined : { scale: 0.95 }}
-                          className="p-2 rounded-lg text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50/70 dark:hover:bg-primary-900/10 transition"
-                          aria-label={showRegPassword ? 'Hide password' : 'Show password'}
-                        >
-                          <motion.span
-                            initial={false}
-                            animate={reduceMotion ? undefined : { rotate: showRegPassword ? 0 : -6 }}
-                            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                            className="block"
-                          >
-                            <EyeIcon open={showRegPassword} />
-                          </motion.span>
-                        </motion.button>
-                      }
-                    />
-                  </>
-                )}
-
-                {mode === 'REGISTER' && role === 'DOCTOR' && (
-                  <div className="max-h-[400px] overflow-y-auto custom-scrollbar pr-2">
-                    <FloatingInput label="Full Name (Dr.)" value={docName} onChange={(e: any) => setDocName(e.target.value)} icon={<span className="text-lg">👨‍⚕️</span>} onFocus={() => setCharacterState('WATCHING')} onBlur={() => setCharacterState('IDLE')} />
-                    <FloatingInput label="Specialization" value={docSpec} onChange={(e: any) => setDocSpec(e.target.value)} icon={<span className="text-lg">🩺</span>} onFocus={() => setCharacterState('WATCHING')} onBlur={() => setCharacterState('IDLE')} />
-                    <FloatingInput label="Reg. Number" value={docRegNo} onChange={(e: any) => setDocRegNo(e.target.value)} icon={<span className="text-lg">🆔</span>} onFocus={() => setCharacterState('WATCHING')} onBlur={() => setCharacterState('IDLE')} />
-                    <FloatingInput label="Email" type="email" value={docEmail} onChange={(e: any) => setDocEmail(e.target.value)} icon={<span className="text-lg">✉️</span>} onFocus={() => setCharacterState('WATCHING')} onBlur={() => setCharacterState('IDLE')} />
-                    <FloatingInput
-                      label="Password"
-                      type={showDocPassword ? 'text' : 'password'}
-                      value={docPassword}
-                      onChange={(e: any) => setDocPassword(e.target.value)}
-                      icon={<span className="text-lg">🔒</span>}
-                      onFocus={() => setCharacterState('HIDING')}
-                      onBlur={() => setCharacterState('IDLE')}
-                      rightAdornment={
-                        <motion.button
-                          type="button"
-                          onClick={() => setShowDocPassword((s) => !s)}
-                          whileHover={reduceMotion ? undefined : { scale: 1.06 }}
-                          whileTap={reduceMotion ? undefined : { scale: 0.95 }}
-                          className="p-2 rounded-lg text-slate-400 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50/70 dark:hover:bg-primary-900/10 transition"
-                          aria-label={showDocPassword ? 'Hide password' : 'Show password'}
-                        >
-                          <motion.span
-                            initial={false}
-                            animate={reduceMotion ? undefined : { rotate: showDocPassword ? 0 : -6 }}
-                            transition={{ type: 'spring', stiffness: 300, damping: 20 }}
-                            className="block"
-                          >
-                            <EyeIcon open={showDocPassword} />
-                          </motion.span>
-                        </motion.button>
-                      }
-                    />
-                    <div className="mb-4">
-                      <label className="text-xs font-bold text-slate-500 uppercase ml-1">Medical Certificate / License *</label>
-                      <input type="file" accept=".pdf,.png,.jpg,.jpeg" className="mt-1 block w-full text-sm text-slate-500 dark:text-slate-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-xs file:font-semibold file:bg-primary-50 dark:file:bg-primary-900 file:text-primary-700 dark:file:text-primary-200 hover:file:bg-primary-100" onChange={e => setDocFile(e.target.files ? e.target.files[0] : null)} />
-                      <p className="mt-1 text-[11px] text-slate-500">Required for admin verification. PDF/JPG/PNG, max 5MB.</p>
-                    </div>
-                  </div>
-                )}
-              </motion.div>
-            </AnimatePresence>
-
-            {/* Error Message */}
-            <AnimatePresence>
-              {error && (
-                <motion.div
-                  initial={{ opacity: 0, height: 0 }}
-                  animate={{ opacity: 1, height: 'auto' }}
-                  exit={{ opacity: 0, height: 0 }}
-                  className="bg-red-50 dark:bg-red-900/20 text-red-700 dark:text-red-200 px-4 py-3 rounded-xl text-sm font-medium mb-4 flex items-center gap-2"
-                >
-                  <svg className="w-5 h-5 shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                  {error}
-=======
                   )}
->>>>>>> 141877e (feat: futuristic UI/UX redesign — Bioluminescent Dark Healthcare OS)
                 </motion.div>
               </AnimatePresence>
 
@@ -639,7 +539,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
                 whileHover={reduceMotion ? undefined : { scale: 1.02, y: -2 }}
                 whileTap={reduceMotion ? undefined : { scale: 0.98 }}
                 disabled={loading}
-                className="w-full relative overflow-hidden py-4 rounded-xl font-bold text-space-950 shimmer-btn flex items-center justify-center gap-2 group"
+                className="w-full relative overflow-hidden py-4 rounded-[22px] font-bold text-space-950 shimmer-btn flex items-center justify-center gap-2 group"
                 style={{
                   background: `linear-gradient(135deg, ${roleConf.color} 0%, ${role === 'PATIENT' ? '#00FFB3' : role === 'DOCTOR' ? '#00D4FF' : '#FF006E'} 100%)`,
                   boxShadow: `0 0 20px ${roleConf.shadow}, 0 10px 30px rgba(0,0,0,0.2)`,

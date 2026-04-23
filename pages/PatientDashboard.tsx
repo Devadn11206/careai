@@ -1,11 +1,12 @@
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { Suspense, lazy, useState, useEffect, useRef } from 'react';
 import { PatientProfile, HealthMetrics, AIAnalysisResult, DoctorProfile, DoctorStatus, EmergencyGuidance, Appointment, UserRole, HealthPassportData, Document, Medication, TimeSlot, ExtractedParameter } from '../types';
 import { Card } from '../components/ui/Card';
 import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { MockBackend } from '../services/mockBackend';
 import { BackendAPI, BackendDoctor, QueueUpdate } from '../services/apiClient';
+import { GeminiService } from '../services/geminiService';
 import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Variants } from 'framer-motion';
@@ -13,7 +14,10 @@ import { MedicalChatbot } from '../components/MedicalChatbot';
 import { ChatSystem } from '../components/ChatSystem';
 import { HealthRiskPredictionModule } from '../components/HealthRiskPredictionModule';
 import { HealthPassport } from '../components/HealthPassport';
-import { VideoCall } from '../components/VideoCall';
+import { HealthLinkBridge } from '../components/HealthLinkBridge';
+
+const LazyVideoCall = lazy(() => import('../components/VideoCall').then((module) => ({ default: module.VideoCall })));
+const prefetchVideoCall = () => { void import('../components/VideoCall'); };
 
 interface Props {
     user: PatientProfile;
@@ -282,7 +286,7 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
     }, [user]);
 
     // --- HANDLERS ---
-    const handleAnalyze = async () => {
+    const handleAnalyze = async (dynamicData?: ExtractedParameter[]) => {
         setLoading(true);
         try {
             const currentMetrics = { ...metrics };
@@ -291,7 +295,7 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
 
             const result = await BackendAPI.analyzeHealthRisk({
                 metrics: currentMetrics,
-                age: safeAge,
+                age: Number(user.age) || 0,
                 gender: user.gender,
             });
 
@@ -500,70 +504,79 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
         >
 
             {/* 1. HERO SECTION: Health Status & Actions */}
-            <motion.div variants={itemVariants} className="relative rounded-[32px] overflow-hidden shadow-2xl bg-slate-900 text-white border border-slate-700/50">
-                <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-rose-600/30 rounded-full blur-[140px] -mr-32 -mt-32 pointer-events-none opacity-60" />
-                <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-indigo-600/30 rounded-full blur-[120px] -ml-20 -mb-20 pointer-events-none opacity-50" />
+            <motion.div variants={itemVariants} className="relative rounded-[32px] overflow-hidden shadow-2xl bg-space-950/80 border border-neon-500/20 glass-card">
+                <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-neon-600/20 rounded-full blur-[140px] -mr-32 -mt-32 pointer-events-none opacity-60" />
+                <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-bio-600/10 rounded-full blur-[120px] -ml-20 -mb-20 pointer-events-none opacity-40" />
 
                 <div className="relative z-10 p-8 md:p-12">
                     <div className="flex flex-col md:flex-row justify-between md:items-center gap-8 mb-10">
                         <div>
                             <div className="flex items-center gap-2 mb-4">
-                                <span className="px-3 py-1 rounded-full bg-white/10 border border-white/20 text-xs font-bold uppercase tracking-wider text-rose-200 backdrop-blur-md">
-                                    Patient Portal
+                                <span className="px-3 py-1 rounded-full bg-neon-500/10 border border-neon-500/30 text-[10px] font-bold uppercase tracking-[0.2em] text-neon-400 backdrop-blur-md">
+                                    Systems Operational
                                 </span>
-                                <span className={`px-3 py-1 rounded-full border backdrop-blur-md text-xs font-bold uppercase tracking-wider ${user.riskStatus === 'STABLE' ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-300' :
-                                    user.riskStatus === 'WATCH' ? 'bg-orange-500/20 border-orange-500/40 text-orange-300' :
-                                        'bg-red-500/20 border-red-500/40 text-red-300'
+                                <span className={`px-3 py-1 rounded-full border backdrop-blur-md text-[10px] font-bold uppercase tracking-[0.2em] ${user.riskStatus === 'STABLE' ? 'bg-bio-500/20 border-bio-500/40 text-bio-300' :
+                                    user.riskStatus === 'WATCH' ? 'bg-amber-500/20 border-amber-500/40 text-amber-300' :
+                                        'bg-pulse-500/20 border-pulse-500/40 text-pulse-400'
                                     }`}>
-                                    {user.riskStatus} Status
+                                    {user.riskStatus}
                                 </span>
                             </div>
-                            <h1 className="text-4xl md:text-6xl font-extrabold tracking-tight mb-3">
-                                Hello, <span className="text-transparent bg-clip-text bg-gradient-to-r from-rose-300 via-rose-200 to-white">{user.name.split(' ')[0]}</span>
+                            <h1 className="text-4xl md:text-7xl font-bold font-['Space_Grotesk'] tracking-tight mb-4">
+                                Welcome, <span className="text-transparent bg-clip-text bg-gradient-to-r from-neon-400 via-bio-300 to-white neon-text-cyan">{user.name.split(' ')[0]}</span>
                             </h1>
-                            <p className="text-slate-300 text-lg max-w-xl font-medium leading-relaxed">
-                                Welcome back. Your health monitoring is active. <br className="hidden md:block" />You have <span className="text-white font-bold">{appointments.filter(a => a.status === 'SCHEDULED').length}</span> upcoming appointments this week.
+                            <p className="text-slate-400 text-lg max-w-xl font-light leading-relaxed">
+                                Biometric monitoring initialized. You have <span className="text-white font-medium">{appointments.filter(a => a.status === 'SCHEDULED').length}</span> upcoming sessions. All vital systems report nominal.
                             </p>
                         </div>
                         <div className="flex flex-col sm:flex-row gap-4">
                             <Button
+                                variant="neon"
                                 onClick={() => document.getElementById('risk-module')?.scrollIntoView({ behavior: 'smooth' })}
-                                className="!bg-white !text-slate-900 hover:!bg-slate-100 !border-none shadow-xl px-8 py-4 rounded-2xl flex items-center gap-3 font-bold text-base transition-transform hover:-translate-y-1"
+                                className="px-8 py-6 rounded-2xl flex items-center gap-3 font-bold text-base transition-all hover:scale-105"
                             >
-                                <span className="text-2xl">🩺</span> Check Vitals
+                                <span className="text-2xl">🧬</span> Sync Vitals
                             </Button>
                             <Button
-                                variant="outline"
+                                variant="cyber"
                                 onClick={() => setShowBookingModal(true)}
-                                className="!bg-white/5 !border-white/20 !text-white hover:!bg-white/10 backdrop-blur-md px-8 py-4 rounded-2xl flex items-center gap-3 font-bold text-base hover:border-white/40 transition-transform hover:-translate-y-1"
+                                className="px-8 py-6 rounded-2xl flex items-center gap-3 font-bold text-base transition-all hover:scale-105"
                             >
-                                <span className="text-2xl">📅</span> Book Visit
+                                <span className="text-2xl">⚡</span> Schedule
                             </Button>
                         </div>
                     </div>
 
                     {/* Stats Ribbon */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-8 border-t border-white/10">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-8 border-t border-white/5">
                         {[
-                            { label: 'Blood Pressure', value: metrics.systolicBP ? `${metrics.systolicBP}/${metrics.diastolicBP}` : '--/--', unit: 'mmHg', icon: '❤️' },
-                            { label: 'Glucose', value: metrics.glucose || '--', unit: 'mg/dL', icon: '🍬' },
-                            { label: 'BMI Score', value: metrics.bmi || '--', unit: 'kg/m²', icon: '⚖️' },
-                            { label: 'Active Risks', value: aiResult?.predictions?.filter(p => p.riskLevel !== 'Low').length || 0, unit: 'Alerts', icon: '⚠️', highlight: true }
+                            { label: 'Blood Pressure', value: metrics.systolicBP ? `${metrics.systolicBP}/${metrics.diastolicBP}` : '--/--', unit: 'mmHg', icon: '❤️', glowColor: 'neon-400' },
+                            { label: 'Glucose Level', value: metrics.glucose || '--', unit: 'mg/dL', icon: '🍬', glowColor: 'bio-400' },
+                            { label: 'Body Mass Index', value: metrics.bmi || '--', unit: 'kg/m²', icon: '⚖️', glowColor: 'neon-400' },
+                            { label: 'Health Alerts', value: aiResult?.predictions?.filter(p => p.riskLevel !== 'Low').length || 0, unit: 'Active', icon: '⚠️', highlight: true, glowColor: 'pulse-400' }
                         ].map((stat, i) => (
-                            <div key={i} className="bg-gradient-to-br from-white/5 to-white/0 border border-white/10 rounded-2xl p-5 backdrop-blur-sm hover:bg-white/10 transition-colors group">
-                                <div className="flex items-center justify-between mb-2">
-                                    <span className="text-slate-400 text-[10px] uppercase font-bold tracking-wider">{stat.label}</span>
-                                    <span className="text-xl opacity-80 group-hover:scale-110 transition-transform">{stat.icon}</span>
+                            <div key={i} className={`relative group overflow-hidden bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-md hover:bg-white/10 transition-all duration-300 ${stat.highlight && typeof stat.value === 'number' && stat.value > 0 ? 'animate-neon-pulse shadow-[0_0_15px_rgba(255,0,110,0.2)]' : ''}`}>
+                                <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-30 transition-opacity">
+                                    <span className="text-4xl">{stat.icon}</span>
                                 </div>
-                                <div className="flex items-baseline gap-1.5">
-                                    <span className={`text-3xl font-bold tracking-tight ${stat.highlight && typeof stat.value === 'number' && stat.value > 0 ? 'text-rose-400' : 'text-white'}`}>{stat.value}</span>
-                                    <span className="text-xs text-slate-500 font-bold">{stat.unit}</span>
+                                <div className="relative z-10">
+                                    <div className="flex items-center justify-between mb-3">
+                                        <span className="text-slate-500 text-[10px] uppercase font-bold tracking-[0.2em]">{stat.label}</span>
+                                        <div className={`w-1.5 h-1.5 rounded-full bg-${stat.glowColor} ${stat.highlight ? 'animate-pulse' : ''}`} />
+                                    </div>
+                                    <div className="flex items-baseline gap-2">
+                                        <span className={`text-3xl font-bold tracking-tight font-['Space_Grotesk'] ${stat.highlight && typeof stat.value === 'number' && stat.value > 0 ? 'text-pulse-400' : 'text-white'}`}>
+                                            {stat.value}
+                                        </span>
+                                        <span className="text-[10px] text-slate-600 font-bold uppercase">{stat.unit}</span>
+                                    </div>
                                 </div>
                             </div>
                         ))}
                     </div>
                 </div>
             </motion.div>
+
 
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
                 {/* 2. LEFT: AI RISK MODULE (Core Workflow) */}
@@ -582,73 +595,74 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
 
                     {/* Trends Chart */}
                     <motion.div variants={itemVariants}>
-                        <Card title="Vitals Trends" className="border-slate-100 dark:border-slate-800 shadow-sm">
-                            {trendData.length === 0 ? (
-                                <div className="py-10 text-center text-sm text-slate-500">
-                                    No vitals recorded yet. Run AI prediction to start your trend graph.
+                        {history.length > 1 && (
+                            <Card title="Vitals Trends" className="border-slate-100 dark:border-slate-800 shadow-sm">
+                                <div className="h-80 w-full mt-2">
+                                    <ResponsiveContainer width="100%" height="100%">
+                                        <AreaChart data={history} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
+                                            <defs>
+                                                <linearGradient id="colorBP" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.2} />
+                                                    <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
+                                                </linearGradient>
+                                                <linearGradient id="colorGl" x1="0" y1="0" x2="0" y2="1">
+                                                    <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
+                                                    <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
+                                                </linearGradient>
+                                            </defs>
+                                            <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.5} />
+                                            <XAxis dataKey="timestamp" hide />
+                                            <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} />
+                                            <Tooltip
+                                                contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', background: 'rgba(255, 255, 255, 0.95)' }}
+                                                itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
+                                            />
+                                            <Legend wrapperStyle={{ paddingTop: '20px' }} />
+                                            <Area type="monotone" name="Systolic BP" dataKey="systolicBP" stroke="#f43f5e" strokeWidth={3} fill="url(#colorBP)" activeDot={{ r: 6, strokeWidth: 0 }} />
+                                            <Area type="monotone" name="Glucose" dataKey="glucose" stroke="#10b981" strokeWidth={3} fill="url(#colorGl)" activeDot={{ r: 6, strokeWidth: 0 }} />
+                                        </AreaChart>
+                                    </ResponsiveContainer>
                                 </div>
-                            ) : (
-                                <>
-                                    <div className="h-80 w-full mt-2">
-                                        <ResponsiveContainer width="100%" height="100%">
-                                            <AreaChart data={trendData} margin={{ top: 10, right: 10, left: -20, bottom: 0 }}>
-                                                <defs>
-                                                    <linearGradient id="colorBP" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="5%" stopColor="#f43f5e" stopOpacity={0.2} />
-                                                        <stop offset="95%" stopColor="#f43f5e" stopOpacity={0} />
-                                                    </linearGradient>
-                                                    <linearGradient id="colorGl" x1="0" y1="0" x2="0" y2="1">
-                                                        <stop offset="5%" stopColor="#10b981" stopOpacity={0.2} />
-                                                        <stop offset="95%" stopColor="#10b981" stopOpacity={0} />
-                                                    </linearGradient>
-                                                </defs>
-                                                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.5} />
-                                                <XAxis dataKey="timestamp" hide />
-                                                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#94a3b8' }} />
-                                                <Tooltip
-                                                    contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)', background: 'rgba(255, 255, 255, 0.95)' }}
-                                                    itemStyle={{ fontSize: '12px', fontWeight: 'bold' }}
-                                                />
-                                                <Legend wrapperStyle={{ paddingTop: '20px' }} />
-                                                <Area type="monotone" name="Systolic BP" dataKey="systolicBP" stroke="#f43f5e" strokeWidth={3} fill="url(#colorBP)" activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false} />
-                                                <Area type="monotone" name="Glucose" dataKey="glucose" stroke="#10b981" strokeWidth={3} fill="url(#colorGl)" activeDot={{ r: 6, strokeWidth: 0 }} isAnimationActive={false} />
-                                            </AreaChart>
-                                        </ResponsiveContainer>
-                                    </div>
-                                    {trendData.length === 1 && (
-                                        <p className="mt-2 text-xs text-slate-500">One reading captured. Add one more to see trend direction.</p>
-                                    )}
-                                </>
-                            )}
-                        </Card>
+                            </Card>
+                        )}
                     </motion.div>
+
+                    <motion.div variants={itemVariants}>
+                        <HealthLinkBridge
+                            patient={user}
+                            appointments={appointments}
+                            metrics={metrics}
+                            medications={medications}
+                        />
+                    </motion.div>
+
                 </div>
 
                 {/* 3. RIGHT: SIDEBAR (Workflow Items) */}
                 <div className="space-y-6">
                     {/* Action Center */}
                     <motion.div variants={itemVariants}>
-                        <Card title="Quick Actions" className="shadow-sm border-slate-100 dark:border-slate-800">
+                        <Card title="Quick Terminal" className="border-neon-500/10 glass-card-dark">
                             <div className="space-y-3">
-                                <Button variant="outline" className="w-full justify-start h-14 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-rose-500 hover:bg-rose-50 dark:hover:bg-rose-900/20 group rounded-xl" onClick={handleGeneratePassport}>
-                                    <span className="mr-3 text-2xl group-hover:scale-110 transition-transform">📋</span>
+                                <Button variant="outline" className="w-full justify-start h-16 text-slate-300 border-white/5 bg-white/5 hover:border-neon-400 hover:bg-neon-400/5 group rounded-2xl group transition-all" onClick={handleGeneratePassport}>
+                                    <span className="mr-3 text-2xl group-hover:scale-110 group-hover:drop-shadow-[0_0_8px_rgba(0,212,255,0.8)] transition-transform">📋</span>
                                     <div className="text-left">
-                                        <span className="font-bold block text-sm">Health Passport</span>
-                                        <span className="text-[10px] text-slate-400 font-normal">Generate PDF Report</span>
+                                        <span className="font-bold block text-xs tracking-wider uppercase">Sync Passport</span>
+                                        <span className="text-[10px] text-slate-500 font-medium">Export Encrypted PDF</span>
                                     </div>
                                 </Button>
-                                <Button variant="outline" className="w-full justify-start h-14 text-slate-600 dark:text-slate-300 border-slate-200 dark:border-slate-700 hover:border-blue-500 hover:bg-blue-50 dark:hover:bg-blue-900/20 group rounded-xl" onClick={() => document.getElementById('documents')?.scrollIntoView({ behavior: 'smooth' })}>
-                                    <span className="mr-3 text-2xl group-hover:scale-110 transition-transform">📂</span>
+                                <Button variant="outline" className="w-full justify-start h-16 text-slate-300 border-white/5 bg-white/5 hover:border-bio-400 hover:bg-bio-400/5 group rounded-2xl group transition-all" onClick={() => document.getElementById('documents')?.scrollIntoView({ behavior: 'smooth' })}>
+                                    <span className="mr-3 text-2xl group-hover:scale-110 group-hover:drop-shadow-[0_0_8px_rgba(0,255,179,0.8)] transition-transform">📂</span>
                                     <div className="text-left">
-                                        <span className="font-bold block text-sm">Upload Records</span>
-                                        <span className="text-[10px] text-slate-400 font-normal">Store Lab Results</span>
+                                        <span className="font-bold block text-xs tracking-wider uppercase">Upload Vault</span>
+                                        <span className="text-[10px] text-slate-500 font-medium">Store Imaging/Lab Results</span>
                                     </div>
                                 </Button>
-                                <Button variant="outline" className="w-full justify-start h-14 text-red-600 dark:text-red-400 border-red-100 dark:border-red-900/30 hover:bg-red-50 dark:hover:bg-red-900/20 hover:border-red-300 group rounded-xl" onClick={() => setShowContactModal(true)}>
-                                    <span className="mr-3 text-2xl group-hover:scale-110 transition-transform">🆘</span>
+                                <Button variant="outline" className="w-full justify-start h-16 text-pulse-400 border-white/5 bg-white/5 hover:border-pulse-500 hover:bg-pulse-500/5 group rounded-2xl group transition-all" onClick={() => setShowContactModal(true)}>
+                                    <span className="mr-3 text-2xl group-hover:scale-110 group-hover:drop-shadow-[0_0_8px_rgba(255,0,110,0.8)] transition-transform">🆘</span>
                                     <div className="text-left">
-                                        <span className="font-bold block text-sm">Emergency Contact</span>
-                                        <span className="text-[10px] text-red-300 font-normal">Update Details</span>
+                                        <span className="font-bold block text-xs tracking-wider uppercase">SOS Config</span>
+                                        <span className="text-[10px] text-pulse-500/70 font-medium">Emergency Contacts</span>
                                     </div>
                                 </Button>
                             </div>
@@ -657,7 +671,7 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
 
                     {/* Up Next Appointment */}
                     <motion.div variants={itemVariants}>
-                        <Card title="Next Appointment" className="shadow-sm border-slate-100 dark:border-slate-800">
+                        <Card title="Active Protocol" className="border-neon-500/10 glass-card-dark">
                             {appointments.filter(a => a.status === 'SCHEDULED').length > 0 ? (
                                 (() => {
                                     const next = appointments.filter(a => a.status === 'SCHEDULED')[0];
@@ -668,70 +682,90 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                                     const isLate = delay >= 5;
                                     let queueMessage = '';
                                     if (ahead !== undefined) {
-                                        if (ahead === 0) queueMessage = 'You are next';
-                                        else if (ahead === 1) queueMessage = '1 patient ahead';
-                                        else if (ahead > 1) queueMessage = `${ahead} patients ahead`;
+                                        if (ahead === 0) queueMessage = 'Connection Established';
+                                        else if (ahead === 1) queueMessage = '1 Subject Ahead';
+                                        else if (ahead > 1) queueMessage = `${ahead} Subjects Ahead`;
                                     }
                                     return (
-                                        <div className="bg-slate-50 dark:bg-slate-800/50 rounded-2xl p-5 border border-slate-100 dark:border-slate-700 relative overflow-hidden">
-                                            <div className="absolute top-0 right-0 w-20 h-20 bg-blue-500/5 rounded-full -mr-6 -mt-6"></div>
+                                        <div className="bg-white/5 rounded-2xl p-5 border border-white/5 relative overflow-hidden group">
+                                            <div className="absolute top-0 right-0 w-24 h-24 bg-neon-500/5 rounded-full -mr-8 -mt-8 group-hover:scale-150 transition-transform duration-500"></div>
                                             <div className="flex gap-4 items-start mb-5 relative z-10">
-                                                <div className="flex flex-col items-center justify-center bg-white dark:bg-slate-700 rounded-2xl w-16 h-16 shadow-sm border border-slate-200 dark:border-slate-600 shrink-0">
-                                                    <span className="text-[10px] font-bold text-rose-500 uppercase tracking-widest">{dateObj.toLocaleDateString('en-US', { month: 'short' })}</span>
-                                                    <span className="text-2xl font-black text-slate-800 dark:text-white">{dateObj.getDate()}</span>
+                                                <div className="flex flex-col items-center justify-center bg-space-900 rounded-2xl w-16 h-18 shadow-xl border border-white/10 shrink-0">
+                                                    <span className="text-[10px] font-bold text-neon-400 uppercase tracking-widest mb-1">{dateObj.toLocaleDateString('en-US', { month: 'short' })}</span>
+                                                    <span className="text-3xl font-bold text-white font-['Space_Grotesk']">{dateObj.getDate()}</span>
                                                 </div>
-                                                <div>
-                                                    <h4 className="font-bold text-slate-800 dark:text-white leading-tight text-lg">{next.doctorName}</h4>
-                                                    <p className="text-xs text-slate-500 dark:text-slate-400 mt-1 font-medium">{next.time} • {next.consultationType}</p>
-                                                    <span className="inline-block mt-2 text-[10px] font-bold px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-300">
-                                                        {next.type}
-                                                    </span>
+                                                <div className="flex-1 min-w-0">
+                                                    <h4 className="font-bold text-white tracking-tight text-lg truncate font-['Space_Grotesk']">{next.doctorName}</h4>
+                                                    <div className="flex items-center gap-2 mt-1">
+                                                        <span className="text-[10px] text-slate-500 font-bold uppercase tracking-wider">{next.time}</span>
+                                                        <span className="w-1 h-1 rounded-full bg-slate-700" />
+                                                        <span className="text-[10px] text-neon-400/80 font-bold uppercase tracking-wider">{next.consultationType}</span>
+                                                    </div>
                                                     {queueMessage && (
-                                                        <p className="mt-2 text-xs font-semibold text-slate-600 dark:text-slate-300">
-                                                            {queueMessage}
-                                                        </p>
+                                                        <div className="mt-3 flex items-center gap-1.5 capitalize">
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-bio-400 animate-pulse" />
+                                                            <span className="text-[11px] font-bold text-bio-300/80 uppercase tracking-wider">
+                                                                {queueMessage}
+                                                            </span>
+                                                        </div>
                                                     )}
                                                     {isLate && (
-                                                        <p className="mt-1 text-[11px] font-semibold text-amber-600 dark:text-amber-300">
-                                                            Doctor running approximately {delay} minutes late
-                                                        </p>
+                                                        <div className="mt-2 flex items-center gap-1.5 capitalize">
+                                                            <div className="w-1.5 h-1.5 rounded-full bg-pulse-500 animate-pulse" />
+                                                            <span className="text-[11px] font-bold text-pulse-400 uppercase tracking-wider">
+                                                                Sync Latency: {delay}m
+                                                            </span>
+                                                        </div>
                                                     )}
                                                 </div>
                                             </div>
                                             <div className="grid grid-cols-2 gap-3 relative z-10">
                                                 {next.consultationType === 'VIDEO' && (
-                                                    <Button size="sm" className="w-full text-xs font-bold shadow-md" onClick={() => setActiveVideoCall(next)}>Join Call</Button>
+                                                    <Button
+                                                        variant="neon"
+                                                        size="sm"
+                                                        className="w-full text-[10px] font-bold uppercase tracking-widest h-10"
+                                                        onMouseEnter={prefetchVideoCall}
+                                                        onFocus={prefetchVideoCall}
+                                                        onClick={() => {
+                                                            prefetchVideoCall();
+                                                            setActiveVideoCall(next);
+                                                        }}
+                                                    >
+                                                        Initialize
+                                                    </Button>
                                                 )}
-                                                <Button size="sm" variant="secondary" className="w-full text-xs font-bold" onClick={() => setActiveChatAppt(next)}>Chat</Button>
+                                                <Button size="sm" variant="cyber" className="w-full text-[10px] font-bold uppercase tracking-widest h-10" onClick={() => setActiveChatAppt(next)}>Comms</Button>
                                             </div>
                                         </div>
                                     );
                                 })()
                             ) : (
-                                <div className="flex flex-col items-center justify-center py-8 text-slate-400 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border border-dashed border-slate-200 dark:border-slate-700">
-                                    <span className="text-3xl mb-2 grayscale opacity-50">📅</span>
-                                    <span className="text-sm font-medium">No upcoming visits</span>
-                                    <button onClick={() => setShowBookingModal(true)} className="mt-3 text-xs font-bold text-rose-600 hover:text-rose-700 hover:underline">Book an Appointment</button>
+                                <div className="flex flex-col items-center justify-center py-10 text-slate-500 bg-white/5 rounded-2xl border border-dashed border-white/10 group">
+                                    <div className="text-4xl mb-4 opacity-50 group-hover:scale-110 transition-transform">📅</div>
+                                    <span className="text-xs font-bold uppercase tracking-widest">No Active Protocol</span>
+                                    <button onClick={() => setShowBookingModal(true)} className="mt-4 text-[10px] font-bold text-neon-400 hover:text-neon-300 uppercase tracking-[0.2em] transition-colors border-b border-neon-400/30 pb-0.5">Initialize Session</button>
                                 </div>
                             )}
                         </Card>
                     </motion.div>
 
+
                     {/* Medications */}
                     <motion.div variants={itemVariants}>
-                        <Card title="My Medications" className="shadow-sm border-slate-100 dark:border-slate-800">
+                        <Card title="Active Medications" className="border-neon-500/10 glass-card-dark">
                             {medications.length === 0 ? (
-                                <div className="text-center py-6 text-slate-400 text-sm italic">No active prescriptions.</div>
+                                <div className="text-center py-6 text-slate-500 text-xs italic tracking-wide uppercase">No Active Protocols.</div>
                             ) : (
                                 <div className="space-y-3">
                                     {medications.map(m => (
-                                        <div key={m.id} className="flex items-center gap-3 p-3 bg-white dark:bg-slate-800/50 rounded-xl border border-slate-100 dark:border-slate-700 shadow-sm hover:shadow-md transition-shadow">
-                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shrink-0 shadow-sm ${m.taken ? 'bg-emerald-400' : 'bg-gradient-to-br from-rose-400 to-rose-500'}`}>
+                                        <div key={m.id} className="flex items-center gap-3 p-3 bg-white/5 rounded-xl border border-white/5 shadow-sm hover:shadow-neon-500/10 hover:border-neon-500/30 transition-all group">
+                                            <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold shrink-0 shadow-sm ${m.taken ? 'bg-bio-500 shadow-[0_0_10px_rgba(0,255,179,0.4)]' : 'bg-gradient-to-br from-neon-500 to-neon-600 shadow-[0_4px_10px_rgba(0,212,255,0.4)]'}`}>
                                                 {m.taken ? '✓' : '💊'}
                                             </div>
                                             <div className="flex-1 min-w-0">
-                                                <p className={`text-sm font-bold truncate ${m.taken ? 'line-through text-slate-400' : 'text-slate-800 dark:text-white'}`}>{m.name}</p>
-                                                <p className="text-xs text-slate-500 truncate">{m.dosage} • {m.time}</p>
+                                                <p className={`text-sm font-bold truncate tracking-tight font-['Space_Grotesk'] ${m.taken ? 'line-through text-slate-500' : 'text-white'}`}>{m.name}</p>
+                                                <p className="text-[10px] text-slate-500 truncate uppercase font-bold tracking-wider">{m.dosage} • {m.time}</p>
                                             </div>
                                         </div>
                                     ))}
@@ -742,12 +776,13 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                 </div>
             </div>
 
+
             {/* 4. LOWER SECTION: Doctors & Records */}
-            <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-8 border-t border-slate-200 dark:border-slate-800">
-                <div id="documents" className="space-y-4">
+            <motion.div variants={itemVariants} className="grid grid-cols-1 md:grid-cols-2 gap-8 pt-10 border-t border-white/5">
+                <div id="documents" className="space-y-6">
                     <div className="flex justify-between items-center">
-                        <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                            <span className="text-2xl">📂</span> Medical Records
+                        <h3 className="text-xl font-bold text-white flex items-center gap-3 font-['Space_Grotesk'] tracking-tight">
+                            <span className="text-2xl drop-shadow-[0_0_8px_rgba(0,212,255,0.6)]">📂</span> Secure Vault
                         </h3>
                         <div className="relative">
                             <input
@@ -758,73 +793,69 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                                 onChange={handleFileUpload}
                                 accept="image/*,application/pdf"
                             />
-                            <Button size="sm" variant="secondary" isLoading={isUploading} onClick={() => fileUploadRef.current?.click()} className="text-xs font-bold">
-                                + Upload
+                            <Button size="sm" variant="cyber" isLoading={isUploading} onClick={() => fileUploadRef.current?.click()} className="text-[10px] font-bold tracking-widest uppercase">
+                                + Add Record
                             </Button>
                         </div>
                     </div>
 
                     <div className="grid grid-cols-1 gap-3 max-h-80 overflow-y-auto custom-scrollbar p-1">
                         {documents.length === 0 && (
-                            <div className="text-center py-10 bg-slate-50 dark:bg-slate-800/30 rounded-2xl border-2 border-dashed border-slate-200 dark:border-slate-700">
-                                <p className="text-slate-400 text-sm font-medium">No records uploaded yet.</p>
-                                <p className="text-slate-400 text-xs mt-1">Upload prescriptions or lab reports safely.</p>
+                            <div className="text-center py-10 bg-white/5 rounded-2xl border-2 border-dashed border-white/10">
+                                <p className="text-slate-500 text-xs font-bold uppercase tracking-widest">No Encrypted Records Found.</p>
+                                <p className="text-slate-600 text-[10px] mt-2 uppercase">Store medical imaging and lab data securely.</p>
                             </div>
                         )}
                         {documents.map(doc => (
-                            <div key={doc.id} className="group bg-white dark:bg-slate-900 p-4 rounded-xl border border-slate-100 dark:border-slate-800 flex items-center justify-between shadow-sm hover:shadow-lg transition-all hover:border-rose-200 dark:hover:border-rose-900">
+                            <div key={doc.id} className="group bg-white/5 p-4 rounded-2xl border border-white/5 flex items-center justify-between shadow-sm hover:shadow-neon-500/10 transition-all hover:border-neon-500/30">
                                 <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-slate-50 dark:bg-slate-800 rounded-xl flex items-center justify-center text-2xl shadow-inner">
+                                    <div className="w-12 h-12 bg-space-900 rounded-xl flex items-center justify-center text-2xl shadow-inner border border-white/5">
                                         {doc.type.includes('pdf') ? '📄' : '🖼️'}
                                     </div>
                                     <div>
-                                        <p className="font-bold text-sm text-slate-700 dark:text-slate-200 truncate max-w-[200px] group-hover:text-rose-600 transition-colors">{doc.name}</p>
-                                        <div className="flex items-center gap-2 text-[10px] text-slate-400 uppercase font-bold tracking-wide mt-1">
-                                            <span className="bg-slate-100 dark:bg-slate-800 px-1.5 rounded">{doc.date}</span>
-                                            <span>•</span>
+                                        <p className="font-bold text-sm text-white truncate max-w-[200px] group-hover:text-neon-400 transition-colors font-['Space_Grotesk']">{doc.name}</p>
+                                        <div className="flex items-center gap-2 text-[10px] text-slate-500 uppercase font-bold tracking-[0.15em] mt-1.5">
+                                            <span className="bg-white/5 px-2 py-0.5 rounded-md">{doc.date}</span>
+                                            <span className="opacity-30">|</span>
                                             <span>{doc.size}</span>
                                         </div>
                                     </div>
                                 </div>
-                                {doc.url ? (
-                                    <button type="button" onClick={() => openDocument(doc.url)} className="text-xs font-bold text-slate-500 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 px-4 py-2 rounded-lg transition-colors border border-slate-100 dark:border-slate-700">
-                                        View
-                                    </button>
-                                ) : (
-                                    <span className="text-[11px] font-bold text-amber-600 bg-amber-50 px-3 py-2 rounded-lg border border-amber-200">
-                                        Re-upload
-                                    </span>
-                                )}
+                                <a href={doc.url} target="_blank" className="text-xs font-bold text-slate-500 hover:text-rose-600 bg-slate-50 hover:bg-rose-50 px-4 py-2 rounded-lg transition-colors border border-slate-100 dark:border-slate-700">
+                                    View
+                                </a>
                             </div>
                         ))}
                     </div>
 
-                    <Card title="Visit History & Notes" className="mt-4">
+
+                    <Card title="Consultation History" className="mt-6 border-neon-500/10 glass-card-dark">
                         {appointments.length === 0 ? (
-                            <p className="text-slate-400 italic text-sm">No consultations recorded yet.</p>
+                            <p className="text-slate-500 italic text-xs tracking-wide uppercase py-4">No Sessions Recorded.</p>
                         ) : (
                             <div className="space-y-3 max-h-64 overflow-y-auto custom-scrollbar pr-1">
                                 {appointments
                                     .slice()
                                     .sort((a, b) => (a.date + a.time).localeCompare(b.date + b.time))
                                     .map(appt => (
-                                        <div key={appt.id} className="p-3 rounded-xl border border-slate-100 dark:border-slate-700 bg-white dark:bg-slate-900 shadow-sm">
-                                            <div className="flex justify-between items-center mb-1">
+                                        <div key={appt.id} className="p-4 rounded-2xl border border-white/5 bg-white/5 shadow-sm group hover:border-neon-500/20 transition-all">
+                                            <div className="flex justify-between items-start mb-2">
                                                 <div>
-                                                    <p className="text-xs font-bold text-slate-500">{appt.date} • {appt.time}</p>
-                                                    <p className="text-sm font-semibold text-slate-800 dark:text-slate-100">{appt.doctorName}</p>
+                                                    <p className="text-[10px] font-bold text-neon-400 uppercase tracking-widest mb-1">{appt.date} • {appt.time}</p>
+                                                    <p className="text-base font-bold text-white font-['Space_Grotesk'] tracking-tight">{appt.doctorName}</p>
                                                 </div>
-                                                <span className="text-[10px] px-2 py-0.5 rounded-full font-bold uppercase bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-300">
+                                                <span className={`text-[9px] px-2 py-0.5 rounded-md font-bold uppercase tracking-widest ${appt.status === 'COMPLETED' ? 'bg-bio-500/20 text-bio-400' : 'bg-white/5 text-slate-400'
+                                                    }`}>
                                                     {appt.status}
                                                 </span>
                                             </div>
                                             {appt.notes ? (
-                                                <p className="mt-2 text-xs text-slate-700 dark:text-slate-200 whitespace-pre-line">
-                                                    {appt.notes}
+                                                <p className="mt-3 text-xs text-slate-400 leading-relaxed max-w-sm line-clamp-2 italic">
+                                                    "{appt.notes}"
                                                 </p>
                                             ) : (
-                                                <p className="mt-2 text-xs text-slate-400 italic">
-                                                    No doctor notes added for this visit yet.
+                                                <p className="mt-3 text-[10px] text-slate-600 uppercase font-bold tracking-wider">
+                                                    Final Report Pending
                                                 </p>
                                             )}
                                             {(appt.status === 'SCHEDULED' || appt.status === 'PENDING') && (
@@ -846,29 +877,31 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                     </Card>
                 </div>
 
-                <div className="space-y-4">
-                    <h3 className="text-xl font-bold text-slate-800 dark:text-white flex items-center gap-2">
-                        <span className="text-2xl">👨‍⚕️</span> Top Specialists
+                <div className="space-y-6">
+                    <h3 className="text-xl font-bold text-white flex items-center gap-3 font-['Space_Grotesk'] tracking-tight">
+                        <span className="text-2xl drop-shadow-[0_0_8px_rgba(0,255,179,0.6)]">👨‍⚕️</span> Available Specialists
                     </h3>
-                    <div className="grid grid-cols-1 gap-3">
+                    <div className="grid grid-cols-1 gap-4">
                         {recommendedDoctors.slice(0, 3).map(d => (
-                            <div key={d.id} className="bg-white dark:bg-slate-900 p-4 rounded-2xl border border-slate-100 dark:border-slate-800 flex items-center justify-between shadow-sm hover:shadow-lg transition-all hover:-translate-y-0.5">
+                            <div key={d.id} className="bg-white/5 p-5 rounded-[24px] border border-white/5 flex items-center justify-between shadow-sm hover:shadow-neon-500/10 hover:border-neon-500/30 transition-all group">
                                 <div className="flex items-center gap-4">
-                                    <div className="w-12 h-12 bg-gradient-to-br from-indigo-500 to-purple-600 rounded-full flex items-center justify-center font-bold text-white text-lg shadow-md ring-2 ring-indigo-100 dark:ring-indigo-900">
+                                    <div className="w-14 h-14 bg-space-900 rounded-2xl flex items-center justify-center font-bold text-white text-xl shadow-xl ring-1 ring-white/10 group-hover:ring-neon-400/30 transition-all">
                                         {d.name.charAt(0)}
                                     </div>
                                     <div>
-                                        <p className="font-bold text-sm text-slate-800 dark:text-white">{d.name}</p>
-                                        <p className="text-xs text-rose-500 font-medium">{d.specialization}</p>
-                                        <div className="flex items-center gap-1 mt-1">
-                                            <span className="text-yellow-400 text-xs">★</span>
-                                            <span className="text-xs text-slate-500 font-bold">{d.rating || 4.8}</span>
+                                        <p className="font-bold text-base text-white font-['Space_Grotesk'] tracking-tight group-hover:text-neon-400 transition-colors">{d.name}</p>
+                                        <p className="text-[11px] text-bio-400 font-bold uppercase tracking-widest mt-1">{d.specialization}</p>
+                                        <div className="flex items-center gap-1.5 mt-2">
+                                            <span className="text-neon-400 text-xs drop-shadow-[0_0_5px_rgba(0,212,255,0.5)]">★</span>
+                                            <span className="text-xs text-slate-500 font-bold tracking-tighter">{d.rating || 4.8}</span>
+                                            <span className="mx-1 text-slate-700">•</span>
+                                            <span className="text-[10px] text-slate-600 font-bold uppercase uppercase">Verified</span>
                                         </div>
                                     </div>
                                 </div>
                                 <Button
                                     size="sm"
-                                    variant="outline"
+                                    variant="neon"
                                     onClick={() => {
                                         // Map recommended doctor (mock) to real backend doctor by email
                                         const backendMatch = doctors.find(bd => bd.email === d.email);
@@ -879,7 +912,7 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                                             alert('This doctor is not yet available for online booking.');
                                         }
                                     }}
-                                    className="text-xs font-bold px-4"
+                                    className="text-[10px] font-bold px-6 uppercase tracking-widest h-10 shadow-lg"
                                 >
                                     Book
                                 </Button>
@@ -888,6 +921,7 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                     </div >
                 </div >
             </motion.div >
+
 
             {/* --- MODALS (Reused) --- */}
             {/* Booking Modal */}
@@ -929,7 +963,7 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                                     </div>
                                 )}
                                 <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Symptoms / Notes for Doctor</label>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Symptoms / Notes For Doctor</label>
                                     <textarea
                                         className="w-full p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500 min-h-[88px]"
                                         value={bookingSymptoms}
@@ -981,7 +1015,16 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
 
             {/* Assistants */}
             <MedicalChatbot />
-            {activeVideoCall && <VideoCall appointmentId={activeVideoCall.id} otherUserName={activeVideoCall.doctorName} currentUserRole={UserRole.PATIENT} onClose={() => setActiveVideoCall(null)} />}
+            {activeVideoCall && (
+                <Suspense fallback={<div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-sm" />}>
+                    <LazyVideoCall
+                        appointmentId={activeVideoCall.id}
+                        otherUserName={activeVideoCall.doctorName}
+                        currentUserRole={UserRole.PATIENT}
+                        onClose={() => setActiveVideoCall(null)}
+                    />
+                </Suspense>
+            )}
             {activeChatAppt && <ChatSystem currentUserId={user.id} currentUserRole={UserRole.PATIENT} appointmentId={activeChatAppt.id} otherUserId={activeChatAppt.doctorId} otherUserName={activeChatAppt.doctorName} onClose={() => setActiveChatAppt(null)} />}
         </motion.div >
     );

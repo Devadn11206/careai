@@ -244,46 +244,58 @@ export const AdminDashboard: React.FC = () => {
   const renderOverview = () => (
       <div className="space-y-6">
           <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
-              <Card className="bg-gradient-to-br from-rose-500 to-pink-600 text-white border-none shadow-lg">
-                  <div className="text-rose-100 text-xs font-bold uppercase tracking-wider mb-1">Total Users</div>
-                  <div className="text-4xl font-bold">{stats?.totalUsers}</div>
+              <Card className="bg-space-900 border border-white/10 p-8 rounded-[32px] glass-card relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-neon-500/10 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-700"></div>
+                  <div className="relative z-10">
+                      <div className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Total Users</div>
+                      <div className="text-5xl font-bold text-white font-['Space_Grotesk'] tracking-tighter">{stats?.totalUsers}</div>
+                  </div>
               </Card>
-              <Card className="bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700">
-                  <div className="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Pending Doctors</div>
-                  <div className="text-4xl font-bold text-orange-500">{stats?.pendingVerifications}</div>
+              <Card className="bg-space-900 border border-white/10 p-8 rounded-[32px] glass-card relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-700"></div>
+                  <div className="relative z-10">
+                      <div className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Pending Doctors</div>
+                      <div className="text-5xl font-bold text-amber-400 font-['Space_Grotesk'] tracking-tighter drop-shadow-[0_0_10px_rgba(251,191,36,0.3)]">{stats?.pendingVerifications}</div>
+                  </div>
               </Card>
-              <Card className="bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700">
-                  <div className="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">Active Alerts</div>
-                  <div className="text-4xl font-bold text-red-600">{alerts.length}</div>
+              <Card className="bg-space-900 border border-pulse-500/20 p-8 rounded-[32px] glass-card relative overflow-hidden group animate-neon-pulse shadow-[0_0_20px_rgba(255,0,110,0.1)]">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-pulse-500/10 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-700"></div>
+                  <div className="relative z-10">
+                      <div className="text-pulse-400/70 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Active Alerts</div>
+                      <div className="text-5xl font-bold text-pulse-400 font-['Space_Grotesk'] tracking-tighter drop-shadow-[0_0_15px_rgba(255,0,110,0.5)]">{alerts.length}</div>
+                  </div>
               </Card>
-              <Card className="bg-white dark:bg-slate-800 border-slate-100 dark:border-slate-700">
-                  <div className="text-slate-400 dark:text-slate-500 text-xs font-bold uppercase tracking-wider mb-1">System Health</div>
-                  <div className="flex items-center gap-2">
-                      <span className="w-3 h-3 rounded-full bg-emerald-500 animate-pulse"></span>
-                      <span className="text-2xl font-bold text-slate-800 dark:text-white">{stats?.systemHealth}</span>
+              <Card className="bg-space-900 border border-white/10 p-8 rounded-[32px] glass-card relative overflow-hidden group">
+                  <div className="absolute top-0 right-0 w-32 h-32 bg-bio-500/10 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-700"></div>
+                  <div className="relative z-10">
+                      <div className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">System Health</div>
+                      <div className="flex items-center gap-3">
+                          <span className="w-4 h-4 rounded-full bg-bio-400 animate-pulse shadow-[0_0_15px_rgba(0,255,179,0.8)]"></span>
+                          <span className="text-3xl font-bold text-white font-['Space_Grotesk'] tracking-widest uppercase">{stats?.systemHealth}</span>
+                      </div>
                   </div>
               </Card>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <Card title="User Growth (Last 7 Days)">
-                  <div className="h-64 w-full">
+              <Card title="User Growth (Last 7 Days)" className="border-white/5 glass-card-dark">
+                  <div className="h-64 w-full pt-4">
                       <ResponsiveContainer width="100%" height="100%">
                           <LineChart data={[
                               {name: 'Mon', uv: 4}, {name: 'Tue', uv: 7}, {name: 'Wed', uv: 5},
                               {name: 'Thu', uv: 10}, {name: 'Fri', uv: 12}, {name: 'Sat', uv: 15}, {name: 'Sun', uv: stats?.totalUsers || 20}
                           ]}>
-                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.2} />
-                              <XAxis dataKey="name" stroke="#94a3b8" />
-                              <YAxis stroke="#94a3b8" />
-                              <Tooltip contentStyle={{backgroundColor: '#1e293b', border: 'none', color: '#fff'}} />
-                              <Line type="monotone" dataKey="uv" stroke="#e11d48" strokeWidth={3} />
+                              <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ffffff" strokeOpacity={0.05} />
+                              <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
+                              <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
+                              <Tooltip contentStyle={{ backgroundColor: '#0a0b14', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }} itemStyle={{ color: '#00d4ff', fontSize: '12px', fontWeight: 'bold' }} cursor={{ stroke: '#00d4ff', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                              <Line type="monotone" dataKey="uv" stroke="#00d4ff" strokeWidth={4} activeDot={{ r: 6, fill: '#00d4ff', strokeWidth: 0 }} />
                           </LineChart>
                       </ResponsiveContainer>
                   </div>
               </Card>
-              <Card title="Patient Risk Distribution">
-                  <div className="h-64 w-full">
+              <Card title="Patient Risk Distribution" className="border-white/5 glass-card-dark">
+                  <div className="h-64 w-full pt-4 flex items-center justify-center">
                       <ResponsiveContainer width="100%" height="100%">
                           <PieChart>
                               <Pie
@@ -292,14 +304,14 @@ export const AdminDashboard: React.FC = () => {
                                       { name: 'Watch', value: users.filter(u => (u as PatientProfile).riskStatus === 'WATCH').length },
                                       { name: 'Critical', value: users.filter(u => (u as PatientProfile).riskStatus === 'CRITICAL').length },
                                   ]}
-                                  cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value"
+                                  cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={8} dataKey="value" stroke="none"
                               >
-                                  {[{color: '#10b981'}, {color: '#f59e0b'}, {color: '#ef4444'}].map((entry, index) => (
+                                  {[{color: '#00ff9f'}, {color: '#f59e0b'}, {color: '#ff006e'}].map((entry, index) => (
                                       <Cell key={`cell-${index}`} fill={entry.color} />
                                   ))}
                               </Pie>
-                              <Tooltip contentStyle={{backgroundColor: '#1e293b', border: 'none', color: '#fff'}} />
-                              <Legend />
+                              <Tooltip contentStyle={{ backgroundColor: '#0a0b14', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }} />
+                              <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 'bold' }} />
                           </PieChart>
                       </ResponsiveContainer>
                   </div>
@@ -319,26 +331,26 @@ export const AdminDashboard: React.FC = () => {
 
       return (
           <div className="space-y-6">
-              <h3 className="text-lg font-bold text-slate-700 dark:text-white">System Analytics & Reporting</h3>
+              <h3 className="text-xl font-bold text-white font-['Space_Grotesk'] tracking-tight">Intelligence & Reporting</h3>
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                  <Card title="User Growth (Detailed)">
-                      <div className="h-64 w-full">
+                  <Card title="User Growth (Detailed)" className="border-white/5 glass-card-dark">
+                      <div className="h-64 w-full pt-4">
                           <ResponsiveContainer width="100%" height="100%">
                               <LineChart data={[
                                   {name: 'Mon', uv: 4}, {name: 'Tue', uv: 7}, {name: 'Wed', uv: 5},
                                   {name: 'Thu', uv: 10}, {name: 'Fri', uv: 12}, {name: 'Sat', uv: 15}, {name: 'Sun', uv: stats?.totalUsers || 20}
                               ]}>
-                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.2} />
-                                  <XAxis dataKey="name" stroke="#94a3b8" />
-                                  <YAxis stroke="#94a3b8" />
-                                  <Tooltip contentStyle={{backgroundColor: '#1e293b', border: 'none', color: '#fff'}} />
-                                  <Line type="monotone" dataKey="uv" stroke="#e11d48" strokeWidth={3} />
+                                  <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ffffff" strokeOpacity={0.05} />
+                                  <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
+                                  <YAxis axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
+                                  <Tooltip contentStyle={{ backgroundColor: '#0a0b14', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }} itemStyle={{ color: '#00d4ff', fontSize: '12px', fontWeight: 'bold' }} cursor={{ stroke: '#00d4ff', strokeWidth: 1, strokeDasharray: '4 4' }} />
+                                  <Line type="monotone" dataKey="uv" stroke="#00d4ff" strokeWidth={4} activeDot={{ r: 6, fill: '#00d4ff', strokeWidth: 0 }} />
                               </LineChart>
                           </ResponsiveContainer>
                       </div>
                   </Card>
-                  <Card title="Patient Risk Segmentation">
-                      <div className="h-64 w-full">
+                  <Card title="Patient Risk Segmentation" className="border-white/5 glass-card-dark">
+                      <div className="h-64 w-full pt-4 flex items-center justify-center">
                           <ResponsiveContainer width="100%" height="100%">
                               <PieChart>
                                   <Pie
@@ -347,28 +359,35 @@ export const AdminDashboard: React.FC = () => {
                                           { name: 'Watch', value: users.filter(u => (u as PatientProfile).riskStatus === 'WATCH').length },
                                           { name: 'Critical', value: users.filter(u => (u as PatientProfile).riskStatus === 'CRITICAL').length },
                                       ]}
-                                      cx="50%" cy="50%" innerRadius={60} outerRadius={80} paddingAngle={5} dataKey="value"
+                                      cx="50%" cy="50%" innerRadius={70} outerRadius={100} paddingAngle={8} dataKey="value" stroke="none"
                                   >
-                                      {[{color: '#10b981'}, {color: '#f59e0b'}, {color: '#ef4444'}].map((entry, index) => (
+                                      {[{color: '#00ff9f'}, {color: '#f59e0b'}, {color: '#ff006e'}].map((entry, index) => (
                                           <Cell key={`cell-${index}`} fill={entry.color} />
                                       ))}
                                   </Pie>
-                                  <Tooltip contentStyle={{backgroundColor: '#1e293b', border: 'none', color: '#fff'}} />
-                                  <Legend />
+                                  <Tooltip contentStyle={{ backgroundColor: '#0a0b14', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }} />
+                                  <Legend verticalAlign="bottom" height={36} iconType="circle" wrapperStyle={{ fontSize: '10px', textTransform: 'uppercase', letterSpacing: '0.1em', fontWeight: 'bold' }} />
                               </PieChart>
                           </ResponsiveContainer>
                       </div>
                   </Card>
-                  <Card title="Appointments by Doctor" className="lg:col-span-2">
-                      <div className="h-64 w-full">
+                  <Card title="Appointments by Doctor" className="lg:col-span-2 border-white/5 glass-card-dark">
+                      <div className="h-64 w-full pt-4">
                           <ResponsiveContainer width="100%" height="100%">
                               {barData.length > 0 ? (
                                   <BarChart data={barData}>
-                                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#e2e8f0" strokeOpacity={0.2} />
-                                      <XAxis dataKey="name" stroke="#94a3b8" />
-                                      <YAxis allowDecimals={false} stroke="#94a3b8" />
-                                      <Tooltip contentStyle={{backgroundColor: '#1e293b', border: 'none', color: '#fff'}} />
-                                      <Bar dataKey="count" fill="#8884d8" barSize={40} radius={[4, 4, 0, 0]} />
+                                      <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#ffffff" strokeOpacity={0.05} />
+                                      <XAxis dataKey="name" axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
+                                      <YAxis allowDecimals={false} axisLine={false} tickLine={false} tick={{ fill: '#64748b', fontSize: 10, fontWeight: 'bold' }} />
+                                      <Tooltip cursor={{ fill: 'rgba(255,255,255,0.03)' }} contentStyle={{ backgroundColor: '#0a0b14', borderRadius: '16px', border: '1px solid rgba(255,255,255,0.1)', color: '#fff' }} />
+                                      <Bar dataKey="count" fill="url(#barNeon)" barSize={40} radius={[8, 8, 0, 0]}>
+                                        <defs>
+                                          <linearGradient id="barNeon" x1="0" y1="0" x2="0" y2="1">
+                                            <stop offset="0%" stopColor="#00d4ff" stopOpacity={1}/>
+                                            <stop offset="100%" stopColor="#00d4ff" stopOpacity={0.2}/>
+                                          </linearGradient>
+                                        </defs>
+                                      </Bar>
                                   </BarChart>
                               ) : (
                                   <div className="flex items-center justify-center h-full text-slate-400">No appointment data available</div>
@@ -382,37 +401,40 @@ export const AdminDashboard: React.FC = () => {
   };
 
   const renderUsers = () => (
-      <Card title="User Management" className="overflow-hidden">
+      <Card title="User Registry" className="overflow-hidden border-white/5 glass-card-dark">
           <div className="overflow-x-auto">
               <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 uppercase text-xs font-bold border-b border-slate-100 dark:border-slate-700">
+                  <thead className="bg-white/5 text-slate-500 uppercase text-[10px] font-black tracking-[0.2em] border-b border-white/5">
                       <tr>
-                          <th className="px-6 py-4">Name</th>
-                          <th className="px-6 py-4">Role</th>
-                          <th className="px-6 py-4">Email</th>
-                          <th className="px-6 py-4">Status</th>
-                          <th className="px-6 py-4 text-right">Actions</th>
+                          <th className="px-6 py-5">Identity</th>
+                          <th className="px-6 py-5">Role</th>
+                          <th className="px-6 py-5">Comm Link</th>
+                          <th className="px-6 py-5">Status</th>
+                          <th className="px-6 py-5 text-right">Actions</th>
                       </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
+                  <tbody className="divide-y divide-white/5">
                       {users.map(u => (
-                          <tr key={u.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                              <td className="px-6 py-4 font-medium text-slate-800 dark:text-slate-200">{u.name}</td>
-                              <td className="px-6 py-4"><span className="bg-slate-100 dark:bg-slate-700 dark:text-slate-300 px-2 py-1 rounded text-xs font-bold">{u.role}</span></td>
-                              <td className="px-6 py-4 text-slate-500 dark:text-slate-400">{u.email}</td>
+                          <tr key={u.id} className="hover:bg-white/5 transition-colors group">
+                              <td className="px-6 py-4">
+                                  <div className="flex items-center gap-3">
+                                      <div className="w-9 h-9 rounded-full bg-space-950 border border-white/10 flex items-center justify-center font-black text-neon-400 text-xs shrink-0">{u.name.charAt(0)}</div>
+                                      <span className="font-bold text-white text-sm tracking-tight font-['Space_Grotesk']">{u.name}</span>
+                                  </div>
+                              </td>
+                              <td className="px-6 py-4"><span className="bg-white/5 border border-white/10 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider text-slate-400">{u.role}</span></td>
+                              <td className="px-6 py-4 text-slate-500 text-xs font-bold tracking-wide">{u.email}</td>
                               <td className="px-6 py-4">
                                   {(u.role === UserRole.DOCTOR && (u as DoctorProfile).status && (u as DoctorProfile).status !== DoctorStatus.VERIFIED) ? (
-                                      <span className="text-amber-700 font-bold text-xs bg-amber-50 dark:bg-amber-900/30 px-2 py-1 rounded">
-                                          {(u as DoctorProfile).status}
-                                      </span>
+                                      <span className="text-amber-400 font-black text-[10px] bg-amber-500/10 border border-amber-500/30 px-3 py-1 rounded-full uppercase tracking-wider">{(u as DoctorProfile).status}</span>
                                   ) : u.isBlocked ? (
-                                      <span className="text-red-500 font-bold text-xs bg-red-50 dark:bg-red-900/30 px-2 py-1 rounded">BLOCKED</span>
-                                  ) : <span className="text-emerald-600 dark:text-emerald-400 font-bold text-xs bg-emerald-50 dark:bg-emerald-900/30 px-2 py-1 rounded">ACTIVE</span>}
+                                      <span className="text-pulse-400 font-black text-[10px] bg-pulse-500/10 border border-pulse-500/30 px-3 py-1 rounded-full uppercase tracking-wider">Blocked</span>
+                                  ) : <span className="text-bio-400 font-black text-[10px] bg-bio-500/10 border border-bio-500/30 px-3 py-1 rounded-full uppercase tracking-wider">Active</span>}
                               </td>
                               <td className="px-6 py-4 text-right">
                                   {u.role !== UserRole.ADMIN && (
-                                      <Button size="sm" variant={u.isBlocked ? "primary" : "danger"} onClick={() => handleBlockUser(u.id, u.isBlocked || false)}>
-                                          {u.isBlocked ? "Unblock" : "Block"}
+                                      <Button size="sm" variant={u.isBlocked ? "neon" : "outline"} className={u.isBlocked ? "rounded-xl text-[10px] font-black uppercase tracking-widest" : "rounded-xl text-[10px] font-black uppercase tracking-widest border-pulse-500/30 text-pulse-400 hover:bg-pulse-500/10"} onClick={() => handleBlockUser(u.id, u.isBlocked || false)}>
+                                          {u.isBlocked ? "Restore" : "Block"}
                                       </Button>
                                   )}
                               </td>
@@ -429,62 +451,61 @@ export const AdminDashboard: React.FC = () => {
       return (
           <div className="space-y-6">
               <div className="flex items-center justify-between">
-                  <h3 className="text-lg font-bold text-slate-700 dark:text-slate-200">Verification Requests</h3>
-                  <span className="bg-yellow-100 text-yellow-800 px-3 py-1 rounded-full text-xs font-bold">{pendingDoctors.length} Pending</span>
+                  <h3 className="text-xl font-bold text-white font-['Space_Grotesk'] tracking-tight">Verification Queue</h3>
+                  <span className="bg-amber-500/10 border border-amber-500/30 text-amber-400 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest">{pendingDoctors.length} Pending</span>
               </div>
-              {pendingDoctors.length === 0 && <div className="p-8 text-center text-slate-400 dark:text-slate-500 bg-slate-50 dark:bg-slate-800 rounded-xl border border-dashed border-slate-200 dark:border-slate-700">No pending verification requests.</div>}
+              {pendingDoctors.length === 0 && <div className="p-12 text-center text-slate-600 bg-white/5 rounded-[24px] border border-dashed border-white/10 text-[10px] font-black uppercase tracking-[0.3em]">Queue Clear — No Pending Requests.</div>}
               {pendingDoctors.map(doc => (
-                  <Card key={doc.id} className="border-l-4 border-l-yellow-400">
-                      <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+                  <div key={doc.id} className="bg-space-900 border border-amber-500/20 rounded-[28px] p-6 glass-card relative overflow-hidden group hover:border-amber-500/40 transition-all">
+                      <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/5 rounded-full -mr-10 -mt-10 group-hover:scale-150 transition-transform duration-700 pointer-events-none" />
+                      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-5 relative z-10">
                           <div>
-                              <h4 className="font-bold text-slate-800 dark:text-white text-lg">{doc.name}</h4>
-                              <p className="text-sm text-slate-600 dark:text-slate-300">{doc.qualification} • {doc.specialization}</p>
-                              <div className="flex gap-2 mt-2 text-xs">
-                                  <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-slate-500 dark:text-slate-300">Reg: {doc.registrationNumber}</span>
-                                  <span className="bg-slate-100 dark:bg-slate-700 px-2 py-1 rounded text-slate-500 dark:text-slate-300">{doc.medicalCouncil}</span>
+                              <h4 className="font-bold text-white text-xl font-['Space_Grotesk'] tracking-tight">{doc.name}</h4>
+                              <p className="text-xs text-slate-500 font-bold uppercase tracking-widest mt-1">{doc.qualification} · {doc.specialization}</p>
+                              <div className="flex flex-wrap gap-2 mt-3">
+                                  <span className="bg-white/5 border border-white/10 px-3 py-1 rounded-full text-[10px] font-black text-slate-400 uppercase tracking-wider">Reg: {doc.registrationNumber}</span>
+                                  <span className="bg-white/5 border border-white/10 px-3 py-1 rounded-full text-[10px] font-black text-slate-400 uppercase tracking-wider">{doc.medicalCouncil}</span>
                               </div>
                           </div>
-                          <Button onClick={() => setSelectedDoctor(doc)}>Review Application</Button>
+                          <Button variant="cyber" className="h-12 px-6 rounded-[16px] text-[10px] font-black uppercase tracking-widest border-amber-500/30 text-amber-400 hover:bg-amber-500/10 shrink-0" onClick={() => setSelectedDoctor(doc)}>Review Identity</Button>
                       </div>
-                  </Card>
+                  </div>
               ))}
           </div>
       );
   };
 
   const renderAppointments = () => (
-      <Card title="All Appointments" className="overflow-hidden">
+      <Card title="Session Registry" className="overflow-hidden border-white/5 glass-card-dark">
           <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
               <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 uppercase text-xs font-bold border-b border-slate-100 dark:border-slate-700 sticky top-0 z-10">
+                  <thead className="bg-white/5 text-slate-500 uppercase text-[10px] font-black tracking-[0.2em] border-b border-white/5 sticky top-0 z-10 backdrop-blur-md">
                       <tr>
-                          <th className="px-6 py-4">Date</th>
-                          <th className="px-6 py-4">Doctor</th>
-                          <th className="px-6 py-4">Patient</th>
-                          <th className="px-6 py-4">Status</th>
-                          <th className="px-6 py-4 text-right">Actions</th>
+                          <th className="px-6 py-5">Vector Date</th>
+                          <th className="px-6 py-5">Specialist</th>
+                          <th className="px-6 py-5">Subject</th>
+                          <th className="px-6 py-5">Status</th>
+                          <th className="px-6 py-5 text-right">Actions</th>
                       </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
+                  <tbody className="divide-y divide-white/5">
                       {appointments.map(appt => (
-                          <tr key={appt.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
+                          <tr key={appt.id} className="hover:bg-white/5 transition-colors group">
                               <td className="px-6 py-4">
-                                  <div className="font-bold text-slate-700 dark:text-slate-300">{new Date(appt.date).toLocaleDateString()}</div>
-                                  <div className="text-xs text-slate-400">{appt.time}</div>
+                                  <div className="font-bold text-white text-sm">{new Date(appt.date).toLocaleDateString()}</div>
+                                  <div className="text-[10px] text-neon-400/60 font-black tracking-widest uppercase mt-0.5">{appt.time}</div>
                               </td>
-                              <td className="px-6 py-4 text-slate-600 dark:text-slate-300">{appt.doctorName}</td>
-                              <td className="px-6 py-4 text-slate-600 dark:text-slate-300">{appt.patientName}</td>
+                              <td className="px-6 py-4 text-slate-400 font-bold text-xs tracking-wide">{appt.doctorName}</td>
+                              <td className="px-6 py-4 text-slate-400 font-bold text-xs tracking-wide">{appt.patientName}</td>
                               <td className="px-6 py-4">
-                                  <span className={`text-[10px] px-2 py-1 rounded font-bold uppercase ${
-                                      appt.status === 'SCHEDULED' ? 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300' :
-                                      appt.status === 'IN_PROGRESS' ? 'bg-amber-100 text-amber-700 dark:bg-amber-900 dark:text-amber-300' :
-                                      appt.status === 'COMPLETED' ? 'bg-green-100 text-green-700 dark:bg-green-900 dark:text-green-300' :
-                                      appt.status === 'CANCELLED' ? 'bg-rose-100 text-rose-700 dark:bg-rose-900 dark:text-rose-300' :
-                                      'bg-slate-100 text-slate-500 dark:bg-slate-700 dark:text-slate-400'
+                                  <span className={`text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-wider border ${
+                                      appt.status === 'SCHEDULED' ? 'bg-neon-500/10 text-neon-400 border-neon-500/30' :
+                                      appt.status === 'COMPLETED' ? 'bg-bio-500/10 text-bio-400 border-bio-500/30' :
+                                      'bg-white/5 text-slate-500 border-white/10'
                                   }`}>{appt.status}</span>
                               </td>
                               <td className="px-6 py-4 text-right">
-                                  <button onClick={() => handleDeleteAppointment(appt.id)} className="text-red-500 hover:text-red-700 text-xs font-bold">Delete</button>
+                                  <button onClick={() => handleDeleteAppointment(appt.id)} className="text-pulse-500/60 hover:text-pulse-400 text-[10px] font-black uppercase tracking-wider transition-colors">Delete</button>
                               </td>
                           </tr>
                       ))}
@@ -495,38 +516,42 @@ export const AdminDashboard: React.FC = () => {
   );
 
   const renderRecords = () => (
-      <Card title="Medical Records Oversight" className="overflow-hidden">
+      <Card title="Encrypted Vault" className="overflow-hidden border-white/5 glass-card-dark">
           <div className="overflow-x-auto max-h-[600px] custom-scrollbar">
               <table className="w-full text-sm text-left">
-                  <thead className="bg-slate-50 dark:bg-slate-800 text-slate-500 dark:text-slate-400 uppercase text-xs font-bold border-b border-slate-100 dark:border-slate-700 sticky top-0 z-10">
+                  <thead className="bg-white/5 text-slate-500 uppercase text-[10px] font-black tracking-[0.2em] border-b border-white/5 sticky top-0 z-10 backdrop-blur-md">
                       <tr>
-                          <th className="px-6 py-4">Document</th>
-                          <th className="px-6 py-4">Patient</th>
-                          <th className="px-6 py-4">Category</th>
-                          <th className="px-6 py-4">Size</th>
-                          <th className="px-6 py-4 text-right">Actions</th>
+                          <th className="px-6 py-5">Record</th>
+                          <th className="px-6 py-5">Subject</th>
+                          <th className="px-6 py-5">Category</th>
+                          <th className="px-6 py-5">Size</th>
+                          <th className="px-6 py-5 text-right">Actions</th>
                       </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-50 dark:divide-slate-700">
+                  <tbody className="divide-y divide-white/5">
                       {documents.length === 0 ? (
-                          <tr><td colSpan={5} className="px-6 py-8 text-center text-slate-400">No records found.</td></tr>
+                          <tr><td colSpan={5} className="px-6 py-12 text-center text-slate-600 text-[10px] font-black uppercase tracking-[0.3em]">Vault Empty — No Records Found.</td></tr>
                       ) : (
                           documents.map(doc => (
-                              <tr key={doc.id} className="hover:bg-slate-50 dark:hover:bg-slate-800/50">
-                                  <td className="px-6 py-4 font-medium text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                                      <span className="p-1 bg-slate-100 dark:bg-slate-700 rounded text-slate-500">{doc.type.includes('pdf') ? '📄' : '🖼️'}</span>
-                                      {doc.name}
+                              <tr key={doc.id} className="hover:bg-white/5 transition-colors group">
+                                  <td className="px-6 py-4">
+                                      <div className="flex items-center gap-3">
+                                          <span className="w-9 h-9 bg-space-950 border border-white/10 rounded-xl flex items-center justify-center text-lg shrink-0">{doc.type.includes('pdf') ? '📄' : '🖼️'}</span>
+                                          <span className="font-bold text-white text-sm truncate max-w-[200px] group-hover:text-neon-400 transition-colors">{doc.name}</span>
+                                      </div>
                                   </td>
-                                  <td className="px-6 py-4 text-slate-600 dark:text-slate-300">{doc.patientName}</td>
-                                  <td className="px-6 py-4"><span className="bg-slate-100 dark:bg-slate-700 dark:text-slate-300 text-xs px-2 py-1 rounded">{doc.category || 'General'}</span></td>
+                                  <td className="px-6 py-4 text-slate-400 font-bold text-xs">{doc.patientName}</td>
+                                  <td className="px-6 py-4"><span className="bg-white/5 border border-white/10 text-[10px] font-black px-3 py-1 rounded-full text-slate-400 uppercase tracking-wider">{doc.category || 'General'}</span></td>
                                   <td className="px-6 py-4 text-slate-500 font-mono text-xs">{doc.size}</td>
-                                  <td className="px-6 py-4 text-right flex justify-end gap-2">
-                                                                            {doc.url ? (
-                                                                                <button type="button" onClick={() => openDocument(doc.url)} className="text-blue-600 hover:text-blue-800 dark:text-blue-400 text-xs font-bold">View</button>
-                                                                            ) : (
-                                                                                <span className="text-[11px] bg-amber-50 text-amber-700 px-2 py-1 rounded font-bold">Re-upload</span>
-                                                                            )}
-                                      <button onClick={() => handleDeleteDocument(doc.patientId, doc.id)} className="text-red-500 hover:text-red-700 text-xs font-bold">Delete</button>
+                                  <td className="px-6 py-4 text-right">
+                                      <div className="flex items-center justify-end gap-3">
+                                          {doc.url ? (
+                                              <button type="button" onClick={() => openDocument(doc.url)} className="text-neon-400/60 hover:text-neon-400 text-[10px] font-black uppercase tracking-wider transition-colors">View</button>
+                                          ) : (
+                                              <span className="text-[10px] bg-amber-500/10 border border-amber-500/30 text-amber-400 px-2 py-1 rounded font-black uppercase tracking-wider">Re-upload</span>
+                                          )}
+                                          <button onClick={() => handleDeleteDocument(doc.patientId, doc.id)} className="text-pulse-500/60 hover:text-pulse-400 text-[10px] font-black uppercase tracking-wider transition-colors">Delete</button>
+                                      </div>
                                   </td>
                               </tr>
                           ))
@@ -540,24 +565,39 @@ export const AdminDashboard: React.FC = () => {
   const renderSafety = () => (
       <div className="space-y-6">
           <div className="flex justify-between items-center">
-              <h3 className="text-lg font-bold text-slate-800 dark:text-white">Emergency Monitoring</h3>
-              <span className="bg-red-100 text-red-800 px-3 py-1 rounded-full text-xs font-bold animate-pulse">{alerts.length} Active Risks</span>
+              <h3 className="text-xl font-bold text-white font-['Space_Grotesk'] tracking-tight">Emergency Monitor</h3>
+              {alerts.length > 0 && <span className="bg-pulse-500/10 border border-pulse-500/30 text-pulse-400 px-4 py-2 rounded-full text-[10px] font-black uppercase tracking-widest animate-pulse">{alerts.length} Active Risks</span>}
           </div>
-          <div className="grid grid-cols-1 gap-4">
-              {alerts.length === 0 && <div className="text-center p-12 bg-slate-50 dark:bg-slate-800 rounded-xl text-slate-400">System Normal. No critical alerts.</div>}
+          <div className="grid grid-cols-1 gap-5">
+              {alerts.length === 0 && (
+                  <div className="text-center p-14 bg-bio-500/5 border border-bio-500/20 rounded-[28px] text-bio-400 text-[10px] font-black uppercase tracking-[0.3em]">
+                      <div className="text-4xl mb-4">🛡️</div>
+                      System Nominal — No Critical Alerts.
+                  </div>
+              )}
               {alerts.map(alert => (
-                  <div key={alert.id} className={`bg-white dark:bg-slate-800 p-4 rounded-xl border-l-4 shadow-sm flex justify-between items-center ${alert.severity === AlertSeverity.CRITICAL ? 'border-l-red-500' : 'border-l-orange-500'}`}>
-                      <div>
-                          <div className="flex items-center gap-2 mb-1">
-                              <span className="font-bold text-slate-800 dark:text-white">{alert.patientName}</span>
-                              <span className={`text-[10px] px-2 py-0.5 rounded font-bold text-white uppercase ${alert.severity === AlertSeverity.CRITICAL ? 'bg-red-500' : 'bg-orange-500'}`}>{alert.severity}</span>
+                  <div key={alert.id} className={`p-6 rounded-[28px] glass-card relative overflow-hidden flex flex-col md:flex-row justify-between items-start md:items-center gap-4 ${
+                      alert.severity === AlertSeverity.CRITICAL
+                          ? 'bg-pulse-500/10 border border-pulse-500/30 shadow-[0_0_30px_rgba(255,0,110,0.1)]'
+                          : 'bg-amber-500/10 border border-amber-500/30'
+                  }`}>
+                      <div className="absolute top-0 right-0 w-24 h-24 rounded-full -mr-8 -mt-8 blur-xl pointer-events-none" style={{ background: alert.severity === AlertSeverity.CRITICAL ? 'rgba(255,0,110,0.15)' : 'rgba(245,158,11,0.15)' }} />
+                      <div className="relative z-10">
+                          <div className="flex items-center gap-3 mb-2">
+                              <div className={`w-2 h-2 rounded-full animate-pulse ${alert.severity === AlertSeverity.CRITICAL ? 'bg-pulse-500' : 'bg-amber-400'}`} />
+                              <span className="font-bold text-white text-lg font-['Space_Grotesk'] tracking-tight">{alert.patientName}</span>
+                              <span className={`text-[10px] px-3 py-1 rounded-full font-black uppercase tracking-wider border ${
+                                  alert.severity === AlertSeverity.CRITICAL ? 'bg-pulse-500/20 text-pulse-400 border-pulse-500/40' : 'bg-amber-500/20 text-amber-400 border-amber-500/40'
+                              }`}>{alert.severity}</span>
                           </div>
-                          <p className="text-sm text-slate-600 dark:text-slate-300">{alert.message}</p>
-                          <p className="text-xs text-slate-400 mt-1">{new Date(alert.timestamp).toLocaleString()}</p>
+                          <p className="text-sm text-slate-400 leading-relaxed">{alert.message}</p>
+                          <p className="text-[10px] text-slate-600 mt-2 uppercase font-black tracking-widest">{new Date(alert.timestamp).toLocaleString()}</p>
                       </div>
-                      <div className="text-right">
-                          <div className="text-2xl font-bold text-slate-800 dark:text-white">{alert.riskScore}<span className="text-sm text-slate-400 font-normal">/100</span></div>
-                          <div className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Risk Score</div>
+                      <div className="text-right relative z-10 shrink-0">
+                          <div className={`text-4xl font-bold font-['Space_Grotesk'] tracking-tighter ${
+                              alert.severity === AlertSeverity.CRITICAL ? 'text-pulse-400 drop-shadow-[0_0_15px_rgba(255,0,110,0.5)]' : 'text-amber-400'
+                          }`}>{alert.riskScore}<span className="text-sm text-slate-500 font-normal">/100</span></div>
+                          <div className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">Risk Index</div>
                       </div>
                   </div>
               ))}
@@ -566,83 +606,100 @@ export const AdminDashboard: React.FC = () => {
   );
 
   const renderBroadcast = () => (
-      <Card title="System Broadcast" className="max-w-xl mx-auto">
-          <div className="space-y-4">
-              <p className="text-sm text-slate-500 dark:text-slate-400">Send a global notification to users. Use for maintenance alerts or health advisories.</p>
-              <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Target Audience</label>
-                  <select className="w-full p-2 border border-slate-200 dark:border-slate-700 rounded-lg bg-slate-50 dark:bg-slate-900 text-slate-700 dark:text-slate-200" value={broadcastTarget} onChange={e => setBroadcastTarget(e.target.value)}>
-                      <option value="ALL">All Users</option>
-                      <option value="PATIENTS">Patients Only</option>
-                      <option value="DOCTORS">Doctors Only</option>
-                  </select>
+      <div className="max-w-2xl mx-auto">
+          <div className="bg-space-900 border border-neon-500/20 rounded-[40px] p-10 glass-card relative overflow-hidden shadow-[0_0_40px_rgba(0,212,255,0.05)]">
+              <div className="absolute -top-20 -right-20 w-60 h-60 bg-neon-600/10 rounded-full blur-[80px] pointer-events-none" />
+              <div className="relative z-10 space-y-8">
+                  <div>
+                      <h3 className="text-2xl font-bold text-white font-['Space_Grotesk'] tracking-tight mb-2">Broadcast Transmission</h3>
+                      <p className="text-[10px] text-slate-500 uppercase font-black tracking-[0.2em]">Dispatch system-wide notifications to all nodes.</p>
+                  </div>
+                  <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] block mb-3 ml-1">Target Node Group</label>
+                      <select className="w-full h-14 px-5 rounded-[20px] bg-space-950 border border-white/10 text-white font-bold text-sm focus:ring-2 focus:ring-neon-400/30 focus:border-neon-400 transition-all appearance-none cursor-pointer" value={broadcastTarget} onChange={e => setBroadcastTarget(e.target.value)}>
+                          <option value="ALL" className="bg-space-900">All Subjects</option>
+                          <option value="PATIENTS" className="bg-space-900">Patients Only</option>
+                          <option value="DOCTORS" className="bg-space-900">Doctors Only</option>
+                      </select>
+                  </div>
+                  <div>
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] block mb-3 ml-1">Transmission Data</label>
+                      <textarea
+                          className="w-full min-h-[140px] p-5 border border-white/10 rounded-[20px] bg-space-950 text-white font-bold text-xs tracking-widest placeholder:text-slate-700 focus:ring-2 focus:ring-neon-400/30 focus:border-neon-400 transition-all resize-none outline-none custom-scrollbar"
+                          placeholder="Compose announcement payload..."
+                          value={broadcastMsg}
+                          onChange={e => setBroadcastMsg(e.target.value)}
+                      />
+                  </div>
+                  <Button variant="neon" className="w-full h-14 rounded-[20px] text-[11px] font-black uppercase tracking-[0.3em] shadow-neon-500/20" onClick={handleBroadcast} disabled={!broadcastMsg.trim()}>Transmit Signal</Button>
               </div>
-              <div>
-                  <label className="block text-sm font-bold text-slate-700 dark:text-slate-300 mb-1">Message</label>
-                  <textarea 
-                      className="w-full p-3 border border-slate-200 dark:border-slate-700 rounded-lg h-32 resize-none focus:ring-2 focus:ring-rose-500 outline-none bg-white dark:bg-slate-900 text-slate-700 dark:text-slate-200"
-                      placeholder="Enter announcement..."
-                      value={broadcastMsg}
-                      onChange={e => setBroadcastMsg(e.target.value)}
-                  ></textarea>
-              </div>
-              <Button className="w-full" onClick={handleBroadcast} disabled={!broadcastMsg.trim()}>Send Broadcast</Button>
           </div>
-      </Card>
+      </div>
   );
 
   const renderSettings = () => (
       <div className="max-w-2xl mx-auto space-y-6">
-          <Card title="Clinical Thresholds">
-              <div className="space-y-4">
+          <Card title="Biometric Thresholds" className="border-white/5 glass-card-dark">
+              <div className="space-y-6 pt-2">
                   <div>
-                      <Input label="High BP Threshold (Systolic)" type="number" value={config?.bpThreshold || 140} onChange={e => setConfig(prev => prev ? {...prev, bpThreshold: +e.target.value} : null)} />
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] block mb-3 ml-1">High BP Threshold (Systolic mmHg)</label>
+                      <input type="number" className="w-full h-14 px-5 rounded-[20px] bg-space-950 border border-white/10 text-white font-bold text-sm focus:ring-2 focus:ring-neon-400/30 focus:border-neon-400 transition-all" value={config?.bpThreshold || 140} onChange={e => setConfig(prev => prev ? {...prev, bpThreshold: +e.target.value} : null)} />
                   </div>
                   <div>
-                      <Input label="High Glucose Threshold (mg/dL)" type="number" value={config?.glucoseThreshold || 180} onChange={e => setConfig(prev => prev ? {...prev, glucoseThreshold: +e.target.value} : null)} />
+                      <label className="text-[10px] font-black text-slate-500 uppercase tracking-[0.3em] block mb-3 ml-1">High Glucose Threshold (mg/dL)</label>
+                      <input type="number" className="w-full h-14 px-5 rounded-[20px] bg-space-950 border border-white/10 text-white font-bold text-sm focus:ring-2 focus:ring-neon-400/30 focus:border-neon-400 transition-all" value={config?.glucoseThreshold || 180} onChange={e => setConfig(prev => prev ? {...prev, glucoseThreshold: +e.target.value} : null)} />
                   </div>
               </div>
           </Card>
-          <Card title="System Controls">
-              <div className="space-y-4">
-                  <div className="flex items-center justify-between">
-                      <span className="font-medium text-slate-700 dark:text-slate-300">Maintenance Mode</span>
-                      <div 
+          <Card title="System Controls" className="border-white/5 glass-card-dark">
+              <div className="space-y-5 pt-2">
+                  <div className="flex items-center justify-between p-5 bg-white/5 rounded-[20px] border border-white/5 hover:border-white/10 transition-colors">
+                      <div>
+                          <span className="font-bold text-white text-sm">Maintenance Mode</span>
+                          <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">Locks all user-facing interfaces</p>
+                      </div>
+                      <div
                           onClick={() => setConfig(prev => prev ? {...prev, maintenanceMode: !prev.maintenanceMode} : null)}
-                          className={`w-12 h-6 rounded-full cursor-pointer relative transition-colors ${config?.maintenanceMode ? 'bg-red-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                          className={`w-14 h-7 rounded-full cursor-pointer relative transition-all duration-300 ${config?.maintenanceMode ? 'bg-pulse-500 shadow-[0_0_15px_rgba(255,0,110,0.4)]' : 'bg-white/10'}`}
                       >
-                          <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${config?.maintenanceMode ? 'left-7' : 'left-1'}`} />
+                          <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all duration-300 shadow-lg ${config?.maintenanceMode ? 'left-8' : 'left-1'}`} />
                       </div>
                   </div>
-                  <div className="flex items-center justify-between">
-                      <span className="font-medium text-slate-700 dark:text-slate-300">Allow New Registrations</span>
-                      <div 
+                  <div className="flex items-center justify-between p-5 bg-white/5 rounded-[20px] border border-white/5 hover:border-white/10 transition-colors">
+                      <div>
+                          <span className="font-bold text-white text-sm">Allow New Registrations</span>
+                          <p className="text-[10px] text-slate-500 uppercase font-black tracking-widest mt-1">Open intake for new subjects</p>
+                      </div>
+                      <div
                           onClick={() => setConfig(prev => prev ? {...prev, allowNewRegistrations: !prev.allowNewRegistrations} : null)}
-                          className={`w-12 h-6 rounded-full cursor-pointer relative transition-colors ${config?.allowNewRegistrations ? 'bg-emerald-500' : 'bg-slate-300 dark:bg-slate-600'}`}
+                          className={`w-14 h-7 rounded-full cursor-pointer relative transition-all duration-300 ${config?.allowNewRegistrations ? 'bg-bio-500 shadow-[0_0_15px_rgba(0,255,179,0.4)]' : 'bg-white/10'}`}
                       >
-                          <div className={`absolute top-1 w-4 h-4 bg-white rounded-full transition-all ${config?.allowNewRegistrations ? 'left-7' : 'left-1'}`} />
+                          <div className={`absolute top-1 w-5 h-5 bg-white rounded-full transition-all duration-300 shadow-lg ${config?.allowNewRegistrations ? 'left-8' : 'left-1'}`} />
                       </div>
                   </div>
               </div>
           </Card>
           <div className="flex justify-end">
-              <Button onClick={handleConfigUpdate}>Save Configuration</Button>
+              <Button variant="neon" className="h-14 px-10 rounded-[20px] text-[11px] font-black uppercase tracking-[0.3em]" onClick={handleConfigUpdate}>Synchronize Config</Button>
           </div>
       </div>
   );
 
   const renderLogs = () => (
-      <Card title="System Audit Logs" className="overflow-hidden">
-          <div className="space-y-4 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
-              {logs.length === 0 && <div className="text-center text-slate-400 py-8">No logs recorded yet.</div>}
-              {logs.map(log => (
-                  <div key={log.id} className="flex gap-4 p-3 border-b border-slate-50 dark:border-slate-800 last:border-0 hover:bg-slate-50 dark:hover:bg-slate-800 transition-colors rounded-lg">
-                      <div className="w-2 h-2 mt-2 rounded-full bg-slate-300 dark:bg-slate-600 shrink-0" />
-                      <div className="flex-1">
-                          <p className="text-sm font-bold text-slate-800 dark:text-slate-200">{log.action}</p>
-                          <p className="text-xs text-slate-600 dark:text-slate-400">{log.details} • Target: <span className="font-mono">{log.targetName}</span></p>
+      <Card title="System Audit Chain" className="overflow-hidden border-white/5 glass-card-dark">
+          <div className="space-y-3 max-h-[600px] overflow-y-auto custom-scrollbar pr-2">
+              {logs.length === 0 && <div className="text-center text-slate-600 py-12 text-[10px] font-black uppercase tracking-[0.3em]">Chain Empty — No Logs Yet.</div>}
+              {logs.map((log, idx) => (
+                  <div key={log.id} className="flex gap-4 p-4 rounded-[16px] border border-white/5 hover:bg-white/5 hover:border-white/10 transition-all group cursor-default">
+                      <div className="flex flex-col items-center gap-1 shrink-0 pt-1">
+                          <div className="w-2 h-2 rounded-full bg-neon-400/60 group-hover:bg-neon-400 transition-colors" />
+                          {idx < logs.length - 1 && <div className="w-px flex-1 bg-white/5" />}
                       </div>
-                      <div className="text-xs text-slate-400 whitespace-nowrap">
+                      <div className="flex-1 min-w-0">
+                          <p className="text-sm font-bold text-white tracking-tight font-['Space_Grotesk']">{log.action}</p>
+                          <p className="text-[10px] text-slate-500 mt-1 font-bold uppercase tracking-wider">{log.details} <span className="text-slate-700">·</span> Target: <span className="font-mono text-neon-400/60">{log.targetName}</span></p>
+                      </div>
+                      <div className="text-[10px] text-slate-600 whitespace-nowrap font-bold uppercase tracking-wider shrink-0 pt-1">
                           {new Date(log.timestamp).toLocaleString()}
                       </div>
                   </div>
@@ -654,10 +711,12 @@ export const AdminDashboard: React.FC = () => {
   // --- MAIN LAYOUT ---
 
   return (
-    <div className="flex flex-col h-full overflow-hidden p-6">
-        <div className="mb-6 flex-shrink-0">
-            <h2 className="text-2xl font-bold text-slate-800 dark:text-white">{activeTab.charAt(0) + activeTab.slice(1).toLowerCase().replace('_', ' ')}</h2>
-            <p className="text-slate-500 dark:text-slate-400 text-sm">System Administration Console</p>
+    <div className="flex flex-col h-full overflow-hidden p-4 md:p-8 bg-space-950/20">
+        <div className="mb-8 flex-shrink-0 relative">
+            <h2 className="text-3xl md:text-4xl font-bold text-white font-['Space_Grotesk'] tracking-tight">
+              {activeTab.charAt(0) + activeTab.slice(1).toLowerCase().replace('_', ' ')}
+            </h2>
+            <p className="text-xs text-slate-500 uppercase tracking-widest mt-2">Nexus Administration Node</p>
         </div>
 
         <div className="flex-1 overflow-y-auto custom-scrollbar">
@@ -685,30 +744,45 @@ export const AdminDashboard: React.FC = () => {
 
         {/* Verification Modal (Reused Logic) */}
         {selectedDoctor && (
-           <div className="fixed inset-0 bg-slate-900/70 z-50 flex items-center justify-center p-4 backdrop-blur-sm" onClick={() => setSelectedDoctor(null)}>
-              <div className="bg-white dark:bg-slate-900 rounded-2xl shadow-2xl max-w-4xl w-full max-h-[90vh] overflow-hidden flex flex-col" onClick={e => e.stopPropagation()}>
-                 <div className="bg-slate-800 p-6 flex justify-between items-center text-white shrink-0">
-                    <h3 className="text-xl font-bold">Verify Doctor: {selectedDoctor.name}</h3>
-                    <button onClick={() => setSelectedDoctor(null)} className="text-slate-400 hover:text-white">✕</button>
+           <div className="fixed inset-0 bg-space-950/80 z-[100] flex items-center justify-center p-4 backdrop-blur-md" onClick={() => setSelectedDoctor(null)}>
+              <div className="bg-space-900/95 rounded-[40px] shadow-2xl max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col border border-neon-500/30 glass-card relative" onClick={e => e.stopPropagation()}>
+                 <div className="absolute -top-24 -right-24 w-64 h-64 bg-neon-600/10 rounded-full blur-[80px] pointer-events-none" />
+                 <div className="absolute -bottom-24 -left-24 w-64 h-64 bg-bio-600/10 rounded-full blur-[80px] pointer-events-none" />
+                 
+                 <div className="p-8 flex justify-between items-center text-white shrink-0 border-b border-white/5 relative z-10">
+                    <h3 className="text-2xl font-bold font-['Space_Grotesk'] tracking-tight flex items-center gap-3">
+                       <div className="w-3 h-3 rounded-full bg-neon-400 animate-pulse" />
+                       Verify Identity: {selectedDoctor.name}
+                    </h3>
+                    <button onClick={() => setSelectedDoctor(null)} className="text-slate-400 hover:text-white text-xl transition-colors bg-white/5 p-2 rounded-lg">✕</button>
                  </div>
-                 <div className="flex-1 p-6 flex flex-col md:flex-row gap-6 overflow-y-auto">
-                    <div className="flex-1 space-y-4">
-                        <div className="p-4 bg-slate-50 dark:bg-slate-800 rounded-xl border border-slate-200 dark:border-slate-700">
-                            <p className="text-xs text-slate-500 dark:text-slate-400 uppercase font-bold">Reg Number</p>
-                            <p className="text-lg font-mono font-bold text-slate-800 dark:text-slate-200">{selectedDoctor.registrationNumber}</p>
-                            <p className="text-xs text-slate-500 dark:text-slate-400 mt-2 uppercase font-bold">Council</p>
-                            <p className="text-sm font-medium text-slate-700 dark:text-slate-300">{selectedDoctor.medicalCouncil}</p>
+                 <div className="flex-1 p-8 flex flex-col lg:flex-row gap-8 overflow-y-auto custom-scrollbar relative z-10">
+                    <div className="flex-1 space-y-6">
+                        <div className="p-6 bg-white/5 rounded-[24px] border border-white/10 glass-card-dark">
+                            <p className="text-[10px] text-slate-500 uppercase font-black tracking-[0.3em]">Registration Token</p>
+                            <p className="text-2xl font-bold tracking-widest text-neon-400 mt-1">{selectedDoctor.registrationNumber}</p>
+                            <p className="text-[10px] text-slate-500 mt-4 uppercase font-black tracking-[0.3em]">Directing Council</p>
+                            <p className="text-sm font-bold tracking-wider text-slate-300 uppercase mt-1">{selectedDoctor.medicalCouncil}</p>
                         </div>
-                        <textarea className="w-full p-3 border border-slate-200 dark:border-slate-700 rounded-lg bg-white dark:bg-slate-800 text-slate-800 dark:text-white" placeholder="Admin remarks..." value={remarks} onChange={e => setRemarks(e.target.value)} />
-                        <div className="flex gap-3">
-                            <Button variant="danger" className="flex-1" onClick={() => handleStatusChange(selectedDoctor.id, DoctorStatus.REJECTED)}>Reject</Button>
-                            <Button className="flex-1 bg-emerald-600 hover:bg-emerald-700" onClick={() => handleStatusChange(selectedDoctor.id, DoctorStatus.VERIFIED)}>Verify & Approve</Button>
+                        <div className="space-y-4">
+                           <label className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] block ml-1">Admin Logs / Remarks</label>
+                           <textarea className="w-full h-32 p-5 border border-white/10 rounded-[20px] bg-space-950 text-white font-bold text-xs tracking-widest placeholder:text-slate-600 focus:ring-2 focus:ring-neon-400/30 focus:border-neon-400 transition-all resize-none outline-none custom-scrollbar" placeholder="Analysis notes..." value={remarks} onChange={e => setRemarks(e.target.value)} />
+                        </div>
+                        <div className="flex gap-4">
+                            <Button variant="outline" className="flex-1 h-14 rounded-[20px] text-[11px] font-black uppercase tracking-[0.2em] border-red-500/30 text-red-400 hover:bg-red-500/10 hover:border-red-500" onClick={() => handleStatusChange(selectedDoctor.id, DoctorStatus.REJECTED)}>Reject</Button>
+                            <Button variant="neon" className="flex-1 h-14 rounded-[20px] text-[11px] font-black uppercase tracking-[0.2em]" onClick={() => handleStatusChange(selectedDoctor.id, DoctorStatus.VERIFIED)}>Verify & Approve</Button>
                         </div>
                     </div>
-                    <div className="flex-1 bg-slate-100 dark:bg-slate-800 rounded-xl flex items-center justify-center border-2 border-dashed border-slate-300 dark:border-slate-700 min-h-[300px]">
+                    <div className="flex-[1.5] bg-space-950/50 rounded-[32px] flex items-center justify-center border border-dashed border-white/20 min-h-[400px] relative overflow-hidden group">
                         {selectedDoctor.verificationDocumentUrl ? (
-                            <iframe src={selectedDoctor.verificationDocumentUrl} className="w-full h-full" title="Doc" />
-                        ) : <span className="text-slate-400">No Document Uploaded</span>}
+                            <iframe src={selectedDoctor.verificationDocumentUrl} className="w-full h-full rounded-[30px] border-none" title="Doc" />
+                        ) : (
+                           <div className="text-center">
+                              <span className="text-4xl opacity-50 mb-4 block">📄</span>
+                              <span className="text-[10px] text-slate-500 font-bold uppercase tracking-[0.3em]">No Document Decrypted</span>
+                           </div>
+                        )}
+                        <div className="absolute inset-0 pointer-events-none shadow-[inset_0_0_50px_rgba(0,0,0,0.8)] rounded-[32px]" />
                     </div>
                  </div>
               </div>

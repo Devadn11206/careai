@@ -5,6 +5,7 @@ import { Button } from './ui/Button';
 import { NotificationCenter } from './NotificationCenter';
 import { MockBackend } from '../services/mockBackend';
 import { AnimatePresence, motion } from 'framer-motion';
+import { HoloBackdrop3D } from './visuals/HoloBackdrop3D';
 
 interface LayoutProps {
   children: React.ReactNode;
@@ -136,8 +137,11 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-slate-50 dark:bg-space-950 font-sans transition-colors duration-500">
-        {children}
+      <div className="relative min-h-screen overflow-hidden bg-slate-50 dark:bg-space-950 font-sans transition-colors duration-500">
+        <HoloBackdrop3D className="opacity-70" intensity={0.75} />
+        <div className="relative z-10">
+          {children}
+        </div>
       </div>
     );
   }
@@ -244,7 +248,9 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
       : isDark ? '#00D4FF' : '#2563eb';
 
   return (
-    <div className="min-h-screen bg-slate-50 dark:bg-space-950 flex flex-col md:flex-row font-sans text-slate-600 dark:text-slate-300 relative transition-colors duration-500">
+    <div className="min-h-screen bg-slate-50 dark:bg-space-950 flex flex-col md:flex-row font-sans text-slate-600 dark:text-slate-300 relative overflow-hidden transition-colors duration-500">
+      <HoloBackdrop3D className="opacity-60" intensity={0.55} />
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_15%_20%,rgba(0,212,255,0.08),transparent_26%),radial-gradient(circle_at_85%_15%,rgba(0,255,179,0.07),transparent_24%),radial-gradient(circle_at_60%_85%,rgba(255,0,110,0.05),transparent_28%)]" />
 
       {/* System Notification Toast */}
       <AnimatePresence>
@@ -465,7 +471,7 @@ export const Layout: React.FC<LayoutProps> = ({ children, user, onLogout }) => {
 
       {/* Main content */}
       <main
-        className="flex-1 overflow-x-hidden overflow-y-auto bg-slate-50 dark:bg-space-950 p-4 md:p-8 pt-20 md:pt-8"
+        className="flex-1 overflow-x-hidden overflow-y-auto scroll-smooth bg-slate-50/40 dark:bg-space-950/40 p-4 md:p-8 pt-20 md:pt-8 backdrop-blur-[2px]"
         ref={mainRef}
       >
         <div className="max-w-7xl mx-auto h-full">

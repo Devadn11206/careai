@@ -1,17 +1,19 @@
 
-import React, { useState, useEffect } from 'react';
+import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { User, UserRole, PatientProfile, DoctorProfile } from './types';
 import { Layout } from './components/Layout';
-import { Login } from './pages/Login';
-import { LandingPage } from './pages/LandingPage';
-import { PatientDashboard } from './pages/PatientDashboard';
-import { DoctorDashboard } from './pages/DoctorDashboard';
-import { AdminDashboard } from './pages/AdminDashboard';
 import { MockBackend } from './services/mockBackend';
 import { BackendAPI, setToken, getToken } from './services/apiClient';
-import { SplashScreen } from './components/SplashScreen';
-import { SymptomScreening } from './components/SymptomScreening';
 import { AppErrorBoundary } from './components/AppErrorBoundary';
+import { AnimatePresence, motion } from 'framer-motion';
+
+const SplashScreen = lazy(() => import('./components/SplashScreen').then((m) => ({ default: m.SplashScreen })));
+const LandingPage = lazy(() => import('./pages/LandingPage').then((m) => ({ default: m.LandingPage })));
+const Login = lazy(() => import('./pages/Login').then((m) => ({ default: m.Login })));
+const SymptomScreening = lazy(() => import('./components/SymptomScreening').then((m) => ({ default: m.SymptomScreening })));
+const PatientDashboard = lazy(() => import('./pages/PatientDashboard').then((m) => ({ default: m.PatientDashboard })));
+const DoctorDashboard = lazy(() => import('./pages/DoctorDashboard').then((m) => ({ default: m.DoctorDashboard })));
+const AdminDashboard = lazy(() => import('./pages/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
 
 type AppView = 'SPLASH' | 'LANDING' | 'AUTH' | 'APP' | 'SCREENING';
 
@@ -127,46 +129,71 @@ function App() {
     }
   };
 
+  const pageFallback = (
+    <div className="flex min-h-[60vh] items-center justify-center px-4 text-center text-sm font-semibold text-slate-500 dark:text-slate-400">
+      Loading experience...
+    </div>
+  );
+
   if (view === 'SPLASH') {
     return (
-      <SplashScreen
-        onComplete={() => {
-          // If session rehydration already succeeded, go straight to the app.
-          // Otherwise, show the landing page first.
-          if (user) {
-            setView('APP');
-          } else {
-            setView('LANDING');
-          }
-        }}
-      />
+      <Suspense fallback={pageFallback}>
+        <SplashScreen
+          onComplete={() => {
+            // If session rehydration already succeeded, go straight to the app.
+            // Otherwise, show the landing page first.
+            if (user) {
+              setView('APP');
+            } else {
+              setView('LANDING');
+            }
+          }}
+        />
+      </Suspense>
     );
   }
 
   if (view === 'SCREENING' && user && user.role === UserRole.PATIENT) {
-    return <SymptomScreening patient={user as PatientProfile} onComplete={handleScreeningComplete} onSkip={() => setView('APP')} />;
+    return (
+      <Suspense fallback={pageFallback}>
+        <SymptomScreening patient={user as PatientProfile} onComplete={handleScreeningComplete} onSkip={() => setView('APP')} />
+      </Suspense>
+    );
   }
 
   return (
     <Layout user={user} onLogout={handleLogout}>
-      {!user ? (
-        view === 'AUTH' ? (
-          <div className="relative">
-            <button
-              onClick={() => setView('LANDING')}
-              className="fixed top-5 left-5 z-[60] rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/80 dark:bg-slate-900/70 backdrop-blur px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:shadow-md hover:border-rose-200 dark:hover:border-rose-900/40 transition"
-              aria-label="Back to landing"
-            >
-              ← Back
-            </button>
-            <Login onLogin={handleLogin} />
-          </div>
-        ) : (
-          <LandingPage onSignIn={() => setView('AUTH')} />
-        )
-      ) : (
-        renderDashboard()
-      )}
+      <AnimatePresence mode="wait">
+        <motion.div
+          key={view + (user ? user.role : 'guest')}
+          initial={{ opacity: 0, y: 15 }}
+          animate={{ opacity: 1, y: 0 }}
+          exit={{ opacity: 0, y: -15 }}
+          transition={{ duration: 0.3, ease: 'easeOut' }}
+          className="w-full h-full"
+        >
+          <Suspense fallback={pageFallback}>
+            {!user ? (
+              view === 'AUTH' ? (
+                <div className="relative">
+                  <button
+                    onClick={() => setView('LANDING')}
+                    className="fixed top-5 left-5 z-[60] rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/80 dark:bg-slate-900/70 backdrop-blur px-4 py-2 text-sm font-bold text-slate-700 dark:text-slate-200 shadow-sm hover:shadow-md hover:border-rose-200 dark:hover:border-rose-900/40 transition"
+                    aria-label="Back to landing"
+                  >
+                    ← Back
+                  </button>
+                  <Login onLogin={handleLogin} />
+                </div>
+              ) : (
+                <LandingPage onSignIn={() => setView('AUTH')} />
+              )
+            ) : (
+              renderDashboard()
+            )}
+          </Suspense>
+        </motion.div>
+      </AnimatePresence>
       <footer className="mt-12 py-6 border-t border-slate-200 dark:border-slate-800 text-center">
         <p className="text-xs text-slate-400 dark:text-slate-500">
           © 2026 CareXAI. <br />

@@ -1,6 +1,7 @@
-import React, { Suspense, useMemo, useRef, useEffect } from 'react';
+import React, { Suspense, useEffect, useMemo, useRef, useState } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Button } from '../components/ui/Button';
+import { HoloBackdrop3D } from '../components/visuals/HoloBackdrop3D';
 
 const BeatingHeart3D = React.lazy(() => import('../components/visuals/BeatingHeart3D'));
 
@@ -145,8 +146,173 @@ const Section: React.FC<{ id?: string; eyebrow: string; title: string; subtitle:
   </motion.section>
 );
 
+// ─── 3D Tilt Service Card ───────────────────────────────────────────────────
+const SERVICES = [
+  { icon: '🫀', label: 'Cardiology', desc: 'Heart rhythm analysis, ECG monitoring, and cardiac risk stratification powered by AI.', color: '#FF6B9D' },
+  { icon: '🧠', label: 'Neurology', desc: 'Neural pattern detection and cognitive health tracking with precision diagnostics.', color: '#7B61FF' },
+  { icon: '🎗️', label: 'Oncology', desc: 'Early-stage risk flags, treatment tracking, and multi-marker clinical summaries.', color: '#00F5D4' },
+  { icon: '👶', label: 'Pediatrics', desc: 'Growth milestone monitoring and child-safe telehealth with parental dashboards.', color: '#00CFFF' },
+  { icon: '🚨', label: 'Emergency', desc: '24/7 critical alert escalation with direct routing to available specialists.', color: '#FF6B9D' },
+  { icon: '📡', label: 'Telemedicine', desc: 'HD video consultations, secure file sharing, and real-time patient vitals sync.', color: '#00F5D4' },
+];
+
+const TiltServiceCard: React.FC<{ service: typeof SERVICES[0]; delay: number }> = ({ service, delay }) => {
+  const ref = useRef<HTMLDivElement>(null);
+  const handleMouseMove = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!ref.current) return;
+    const r = ref.current.getBoundingClientRect();
+    const x = ((e.clientX - r.left) / r.width - 0.5) * 18;
+    const y = ((e.clientY - r.top) / r.height - 0.5) * -18;
+    ref.current.style.transform = `perspective(1000px) rotateY(${x}deg) rotateX(${y}deg) scale(1.03)`;
+  };
+  const handleMouseLeave = () => { if (ref.current) ref.current.style.transform = 'perspective(1000px) rotateY(0deg) rotateX(0deg) scale(1)'; };
+  return (
+    <motion.div initial={{ opacity: 0, y: 30 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay }}>
+      <div ref={ref} onMouseMove={handleMouseMove} onMouseLeave={handleMouseLeave} className="tilt-card h-full rounded-2xl p-6 cursor-default group relative overflow-hidden"
+        style={{ background: 'rgba(5,10,20,0.7)', border: `1px solid ${service.color}25`, backdropFilter: 'blur(20px)', transition: 'transform 0.15s ease-out, box-shadow 0.3s ease' }}>
+        <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none rounded-2xl"
+          style={{ background: `radial-gradient(circle at 30% 30%, ${service.color}12, transparent 60%)` }} />
+        <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl mb-5 animate-float"
+          style={{ background: `${service.color}15`, border: `1px solid ${service.color}35`, boxShadow: `0 0 20px ${service.color}20` }}>
+          {service.icon}
+        </div>
+        <h3 className="text-lg font-bold text-white mb-2" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>{service.label}</h3>
+        <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>{service.desc}</p>
+        <div className="absolute bottom-0 left-0 h-0.5 w-0 group-hover:w-full transition-all duration-500 rounded-full"
+          style={{ background: `linear-gradient(90deg, transparent, ${service.color}, transparent)` }} />
+      </div>
+    </motion.div>
+  );
+};
+
+// ─── Stats Counter ──────────────────────────────────────────────────────────
+const STATS = [
+  { value: 50000, label: 'Patients Served', suffix: '+', color: '#00F5D4' },
+  { value: 200, label: 'Verified Doctors', suffix: '+', color: '#00CFFF' },
+  { value: 98, label: 'Satisfaction Rate', suffix: '%', color: '#7B61FF' },
+  { value: 99.9, label: 'System Uptime', suffix: '%', color: '#FF6B9D' },
+];
+
+const CounterNum: React.FC<{ target: number; suffix: string; color: string }> = ({ target, suffix, color }) => {
+  const [count, setCount] = React.useState(0);
+  const ref = useRef<HTMLDivElement>(null);
+  const started = useRef(false);
+  useEffect(() => {
+    const obs = new IntersectionObserver(([e]) => {
+      if (e.isIntersecting && !started.current) {
+        started.current = true;
+        const dur = 2000; const steps = 60; const inc = target / steps;
+        let cur = 0; let s = 0;
+        const t = setInterval(() => { cur += inc; s++; setCount(Math.min(cur, target)); if (s >= steps) clearInterval(t); }, dur / steps);
+      }
+    }, { threshold: 0.5 });
+    if (ref.current) obs.observe(ref.current);
+    return () => obs.disconnect();
+  }, [target]);
+  return (
+    <div ref={ref} className="text-5xl md:text-6xl font-bold" style={{ fontFamily: "'Space Grotesk',sans-serif", color, textShadow: `0 0 30px ${color}60` }}>
+      {target < 100 ? count.toFixed(target % 1 !== 0 ? 1 : 0) : Math.floor(count).toLocaleString()}{suffix}
+    </div>
+  );
+};
+
+// ─── Doctor Flip Card ───────────────────────────────────────────────────────
+const DOCTORS = [
+  { name: 'Dr. Ananya Sharma', spec: 'Cardiologist', exp: '12 yrs', rating: 4.9, color: '#FF6B9D', bio: 'Board-certified cardiologist specialising in interventional procedures and heart failure management.' },
+  { name: 'Dr. Rohan Mehta', spec: 'Neurologist', exp: '9 yrs', rating: 4.8, color: '#7B61FF', bio: 'Expert in epilepsy, stroke recovery, and cognitive neuroscience with clinical AI research background.' },
+  { name: 'Dr. Priya Nair', spec: 'Oncologist', exp: '15 yrs', rating: 5.0, color: '#00F5D4', bio: 'Leading oncologist in precision medicine and early-detection protocols using multi-modal biomarkers.' },
+  { name: 'Dr. Vikram Das', spec: 'Pediatrician', exp: '8 yrs', rating: 4.9, color: '#00CFFF', bio: 'Child health specialist focused on developmental wellness, vaccination, and telemedicine care.' },
+];
+
+const DoctorFlipCard: React.FC<{ doc: typeof DOCTORS[0]; delay: number; onBook: () => void }> = ({ doc, delay, onBook }) => (
+  <motion.div initial={{ opacity: 0, y: 20 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.5, delay }} className="flip-card h-64">
+    <div className="flip-card-inner rounded-2xl">
+      {/* FRONT */}
+      <div className="flip-card-front rounded-2xl p-6 flex flex-col items-center justify-center text-center"
+        style={{ background: 'rgba(5,10,20,0.85)', border: `1px solid ${doc.color}25`, backdropFilter: 'blur(20px)' }}>
+        <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-2xl font-bold mb-4"
+          style={{ background: `${doc.color}20`, border: `1px solid ${doc.color}40`, color: doc.color, boxShadow: `0 0 20px ${doc.color}30`, fontFamily: "'Space Grotesk',sans-serif" }}>
+          {doc.name.charAt(3)}
+        </div>
+        <h3 className="text-base font-bold text-white mb-1" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>{doc.name}</h3>
+        <p className="text-xs font-bold uppercase tracking-wider mb-2" style={{ color: doc.color }}>{doc.spec}</p>
+        <div className="flex items-center gap-1.5">
+          <span style={{ color: doc.color }}>★</span>
+          <span className="text-sm font-bold text-white">{doc.rating}</span>
+          <span className="text-xs" style={{ color: 'rgba(255,255,255,0.4)' }}>· {doc.exp}</span>
+        </div>
+        <p className="text-[10px] mt-3" style={{ color: 'rgba(255,255,255,0.3)' }}>Hover to learn more</p>
+      </div>
+      {/* BACK */}
+      <div className="flip-card-back rounded-2xl p-6 flex flex-col justify-between"
+        style={{ background: `linear-gradient(135deg, ${doc.color}18, rgba(5,10,20,0.95))`, border: `1px solid ${doc.color}40`, backdropFilter: 'blur(20px)' }}>
+        <div>
+          <p className="text-xs font-bold uppercase tracking-widest mb-2" style={{ color: doc.color }}>{doc.spec}</p>
+          <h3 className="text-base font-bold text-white mb-3" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>{doc.name}</h3>
+          <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.65)' }}>{doc.bio}</p>
+        </div>
+        <button onClick={onBook} className="mt-4 w-full py-2.5 rounded-xl text-sm font-bold transition-all hover:scale-105"
+          style={{ background: `linear-gradient(135deg, ${doc.color}, ${doc.color}99)`, color: '#050A1F', boxShadow: `0 0 20px ${doc.color}40` }}>
+          Book Consultation
+        </button>
+      </div>
+    </div>
+  </motion.div>
+);
+
+// ─── Testimonials ───────────────────────────────────────────────────────────
+const TESTIMONIALS = [
+  { name: 'Meera K.', condition: 'Cardiac Patient', quote: 'CareXAI caught an irregular heartbeat pattern two weeks before my scheduled check-up. The AI alert saved my life.', color: '#FF6B9D' },
+  { name: 'Arun S.', condition: 'Diabetes Management', quote: 'My glucose trends are finally under control. The AI insights helped me adjust my diet without needing a constant clinic visit.', color: '#00F5D4' },
+  { name: 'Dr. Leela R.', condition: 'Neurologist', quote: 'The consultation summaries and real-time patient data have cut my pre-consultation prep time by 70%. Remarkable platform.', color: '#7B61FF' },
+  { name: 'Pradeep M.', condition: 'Post-Surgery Recovery', quote: 'Being able to video-call my surgeon from home during recovery, with my vitals automatically shared, was extraordinary.', color: '#00CFFF' },
+];
+
+const TestimonialsCarousel: React.FC = () => {
+  const [idx, setIdx] = React.useState(0);
+  useEffect(() => { const t = setInterval(() => setIdx(i => (i + 1) % TESTIMONIALS.length), 4000); return () => clearInterval(t); }, []);
+  const t = TESTIMONIALS[idx];
+  return (
+    <div className="relative">
+      <motion.div key={idx} initial={{ opacity: 0, y: 16 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0 }} transition={{ duration: 0.5 }}
+        className="rounded-3xl p-8 md:p-10 relative overflow-hidden"
+        style={{ background: 'rgba(5,10,20,0.7)', border: `1px solid ${t.color}25`, backdropFilter: 'blur(24px)', boxShadow: `0 0 40px ${t.color}10` }}>
+        <div className="absolute top-6 left-8 text-7xl font-serif leading-none pointer-events-none select-none" style={{ color: `${t.color}25` }}>"</div>
+        <div className="relative z-10">
+          <p className="text-lg md:text-xl leading-relaxed text-white mb-8 italic" style={{ fontFamily: "'DM Sans',sans-serif" }}>{t.quote}</p>
+          <div className="flex items-center gap-4">
+            <div className="w-12 h-12 rounded-full flex items-center justify-center text-lg font-bold"
+              style={{ background: `${t.color}20`, border: `1px solid ${t.color}40`, color: t.color }}>
+              {t.name.charAt(0)}
+            </div>
+            <div>
+              <p className="font-bold text-white text-sm" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>{t.name}</p>
+              <p className="text-xs" style={{ color: t.color }}>{t.condition}</p>
+            </div>
+          </div>
+        </div>
+      </motion.div>
+      <div className="flex justify-center gap-2 mt-6">
+        {TESTIMONIALS.map((_, i) => (
+          <button key={i} onClick={() => setIdx(i)} className="w-2 h-2 rounded-full transition-all duration-300"
+            style={{ background: i === idx ? t.color : 'rgba(255,255,255,0.2)', boxShadow: i === idx ? `0 0 8px ${t.color}` : 'none', transform: i === idx ? 'scale(1.4)' : 'scale(1)' }} />
+        ))}
+      </div>
+    </div>
+  );
+};
+
 export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
   const reduceMotion = useReducedMotion();
+  const [renderDeferredSections, setRenderDeferredSections] = useState(false);
+
+  useEffect(() => {
+    const idleTimer = window.setTimeout(() => {
+      setRenderDeferredSections(true);
+    }, 1100);
+
+    return () => window.clearTimeout(idleTimer);
+  }, []);
 
   const scrollTo = (id: string) => {
     const el = document.getElementById(id);
@@ -162,18 +328,13 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
   ];
 
   return (
-    <div className="relative overflow-x-hidden bg-slate-50 dark:bg-space-950" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="relative overflow-x-hidden bg-slate-50 dark:bg-space-950" style={{ fontFamily: "'DM Sans', sans-serif" }}>
+      <div className="absolute inset-0 pointer-events-none bg-[radial-gradient(circle_at_top_left,rgba(0,212,255,0.12),transparent_26%),radial-gradient(circle_at_78%_15%,rgba(0,255,179,0.12),transparent_24%),radial-gradient(circle_at_bottom_right,rgba(123,97,255,0.09),transparent_28%)]" />
 
       {/* ========== NAVBAR ========== */}
       <div className="relative z-20 mx-auto max-w-7xl px-6 md:px-10 pt-6">
         <div
-          className="flex items-center justify-between rounded-2xl px-5 py-3.5"
-          style={{
-            background: 'rgba(5,10,20,0.7)',
-            border: '1px solid rgba(0,212,255,0.15)',
-            backdropFilter: 'blur(20px)',
-            boxShadow: '0 0 20px rgba(0,212,255,0.05)',
-          }}
+          className="glass-shell flex items-center justify-between rounded-[28px] px-5 py-3.5 shadow-[0_24px_80px_rgba(0,0,0,0.2)]"
         >
           <button onClick={() => scrollTo('top')} className="flex items-center gap-3" aria-label="CareXAI Home">
             <div
@@ -221,25 +382,27 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
       </div>
 
       {/* ========== HERO ========== */}
-      <div id="top" className="relative min-h-screen flex items-center overflow-hidden">
+      <div id="top" className="relative min-h-screen flex items-center justify-center overflow-hidden">
         {/* Background elements */}
-        <div className="absolute inset-0 pointer-events-none">
-          <div className="absolute inset-0 grid-dot-bg-animated opacity-30 dark:opacity-100" />
-          <div className="absolute top-1/4 -left-32 w-96 h-96 rounded-full blur-[120px] opacity-30" style={{ background: 'rgba(0,212,255,0.15)' }} />
-          <div className="absolute bottom-1/4 -right-32 w-96 h-96 rounded-full blur-[120px] opacity-20" style={{ background: 'rgba(0,255,179,0.12)' }} />
-          <div className="absolute inset-0 hidden dark:block">
-            <HeroParticles />
+        <div className="absolute inset-0 pointer-events-none flex items-center justify-center overflow-hidden">
+          {/* Centered Small 3D Object for performance and aesthetics */}
+          <div className="relative w-full max-w-[800px] aspect-square opacity-60 mix-blend-screen scale-150 md:scale-125">
+            <HoloBackdrop3D intensity={0.9} />
           </div>
+          <div className="absolute inset-0 grid-dot-bg-animated opacity-24 dark:opacity-70" />
+          <div className="absolute top-24 -left-32 w-[30rem] h-[30rem] rounded-full blur-[120px] opacity-30 aurora-drift" style={{ background: 'rgba(0,212,255,0.14)' }} />
+          <div className="absolute bottom-16 -right-24 w-[28rem] h-[28rem] rounded-full blur-[120px] opacity-25 aurora-drift" style={{ background: 'rgba(0,255,179,0.12)', animationDelay: '-4s' }} />
         </div>
 
         <div className="relative z-10 mx-auto max-w-7xl px-6 md:px-10 pt-32 pb-24 w-full">
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
+          <div className="flex flex-col items-center justify-center max-w-4xl mx-auto text-center">
 
-            {/* Left: text */}
+            {/* Hero text */}
             <motion.div
               initial={{ opacity: 0, y: 24 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ duration: 0.7, ease: 'easeOut' }}
+              className="flex flex-col items-center"
             >
               {/* Eyebrow badge */}
               <div
@@ -274,11 +437,11 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
                 </span>
               </h1>
 
-              <p className="text-base md:text-lg text-slate-600 dark:text-slate-400 leading-relaxed max-w-xl mb-8">
+              <p className="text-base md:text-lg text-slate-600 dark:text-slate-400 leading-relaxed max-w-2xl mx-auto mb-8">
                 AI-powered telehealth platform combining appointments, clinical insights, risk prediction, and secure doctor–patient communication in one intelligent healthcare ecosystem.
               </p>
 
-              <div className="flex flex-col sm:flex-row gap-3 mb-10">
+              <div className="flex flex-col sm:flex-row gap-4 mb-10 justify-center w-full">
                 <motion.button
                   onClick={() => scrollTo('cta')}
                   whileHover={reduceMotion ? undefined : { y: -3, scale: 1.02 }}
@@ -298,79 +461,14 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
               </div>
 
               {/* Live stats */}
-              <div className="grid grid-cols-3 gap-3">
+              <div className="grid grid-cols-3 gap-3 w-full max-w-2xl mx-auto">
                 <StatCard label="Heart Rate" value="72 bpm" color="#00D4FF" delay={0.3} />
                 <StatCard label="SpO₂" value="98%" color="#00FFB3" delay={0.4} />
                 <StatCard label="BP" value="118/76" color="#7aeeff" delay={0.5} />
               </div>
             </motion.div>
 
-            {/* Right: 3D heart visualization */}
-            <motion.div
-              initial={{ opacity: 0, y: 24 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ duration: 0.8, ease: 'easeOut', delay: 0.15 }}
-            >
-              <div
-                className="relative rounded-3xl overflow-hidden"
-                style={{
-                  background: 'rgba(5,10,20,0.7)',
-                  border: '1px solid rgba(0,212,255,0.2)',
-                  backdropFilter: 'blur(20px)',
-                  boxShadow: '0 0 40px rgba(0,212,255,0.1), 0 40px 80px rgba(0,0,0,0.3)',
-                }}
-              >
-                {/* Header */}
-                <div className="p-5 pb-0 flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-[10px] font-extrabold uppercase tracking-[0.18em] mb-1" style={{ color: 'rgba(0,212,255,0.6)' }}>Live Clinical Visualization</div>
-                    <div className="text-base font-bold text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>3D Cardiac Monitor</div>
-                  </div>
-                  <div
-                    className="flex-shrink-0 rounded-xl px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider"
-                    style={{ background: 'rgba(0,255,179,0.1)', border: '1px solid rgba(0,255,179,0.2)', color: '#00FFB3' }}
-                  >
-                    Live
-                  </div>
-                </div>
 
-                <Suspense fallback={
-                  <div className="mt-4 h-[320px] sm:h-[360px] w-full flex items-center justify-center">
-                    <div className="w-16 h-16 rounded-full border-2 border-neon-400/30 border-t-neon-400 animate-spin" />
-                  </div>
-                }>
-                  <BeatingHeart3D className="mt-2 h-[320px] sm:h-[360px] w-full" bpm={72} />
-                </Suspense>
-
-                {/* ECG strip at bottom */}
-                <div className="p-4 pt-2">
-                  <svg viewBox="0 0 400 30" className="w-full h-8" preserveAspectRatio="none">
-                    <defs>
-                      <linearGradient id="landingEcg" x1="0" y1="0" x2="1" y2="0">
-                        <stop offset="0%" stopColor="rgba(0,212,255,0)" />
-                        <stop offset="30%" stopColor="#00D4FF" />
-                        <stop offset="70%" stopColor="#00FFB3" />
-                        <stop offset="100%" stopColor="rgba(0,255,179,0)" />
-                      </linearGradient>
-                    </defs>
-                    <motion.path
-                      d="M0 15 H80 L95 15 L105 3 L115 27 L125 15 H200 L215 15 L225 2 L235 28 L245 15 H400"
-                      fill="none" stroke="url(#landingEcg)" strokeWidth="1.5" strokeLinecap="round"
-                      style={{ filter: 'drop-shadow(0 0 3px rgba(0,212,255,0.5))' }}
-                      initial={{ pathLength: 0 }}
-                      animate={{ pathLength: 1 }}
-                      transition={{ duration: 2, repeat: Infinity, repeatDelay: 0.5, ease: 'linear' }}
-                    />
-                  </svg>
-                </div>
-
-                {/* Corner decorations */}
-                <div className="absolute top-3 left-3 w-4 h-4 border-t border-l" style={{ borderColor: 'rgba(0,212,255,0.4)' }} />
-                <div className="absolute top-3 right-3 w-4 h-4 border-t border-r" style={{ borderColor: 'rgba(0,212,255,0.4)' }} />
-                <div className="absolute bottom-3 left-3 w-4 h-4 border-b border-l" style={{ borderColor: 'rgba(0,212,255,0.4)' }} />
-                <div className="absolute bottom-3 right-3 w-4 h-4 border-b border-r" style={{ borderColor: 'rgba(0,212,255,0.4)' }} />
-              </div>
-            </motion.div>
 
           </div>
         </div>
@@ -488,6 +586,85 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
           </div>
         </Section>
       </div>
+
+      {renderDeferredSections ? (
+        <>
+          {/* ========== SERVICES GRID ========== */}
+          <div className="py-24" style={{ background: 'linear-gradient(180deg, transparent, rgba(0,245,212,0.03), transparent)' }}>
+            <div className="mx-auto max-w-7xl px-6 md:px-10">
+              <motion.div initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="mb-12">
+                <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] mb-4" style={{ background: 'rgba(0,245,212,0.08)', border: '1px solid rgba(0,245,212,0.2)', color: '#00F5D4' }}>
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#7B61FF', boxShadow: '0 0 6px rgba(123,97,255,0.8)' }} />
+                  Medical Specialties
+                </div>
+                <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white mb-3" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>World-class care, every specialty</h2>
+                <p className="max-w-2xl text-base leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>AI-enhanced consultations across cardiology, neurology, oncology, pediatrics, emergency, and telemedicine — all in one unified platform.</p>
+              </motion.div>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+                {SERVICES.map((s, i) => <TiltServiceCard key={s.label} service={s} delay={i * 0.08} />)}
+              </div>
+            </div>
+          </div>
+
+          {/* ========== STATS COUNTER ========== */}
+          <div className="py-20 relative overflow-hidden">
+            <div className="absolute inset-0 pointer-events-none">
+              <div className="orb-1 absolute top-1/2 left-1/4 -translate-y-1/2 w-96 h-96 rounded-full blur-[140px]" style={{ background: 'rgba(0,245,212,0.06)' }} />
+              <div className="orb-2 absolute top-1/2 right-1/4 -translate-y-1/2 w-80 h-80 rounded-full blur-[120px]" style={{ background: 'rgba(123,97,255,0.05)' }} />
+            </div>
+            <div className="relative z-10 mx-auto max-w-7xl px-6 md:px-10">
+              <div className="rounded-3xl p-10 md:p-16" style={{ background: 'rgba(5,10,20,0.6)', border: '1px solid rgba(0,245,212,0.12)', backdropFilter: 'blur(20px)' }}>
+                <div className="grid grid-cols-2 lg:grid-cols-4 gap-10 text-center">
+                  {STATS.map((s) => (
+                    <div key={s.label}>
+                      <CounterNum target={s.value} suffix={s.suffix} color={s.color} />
+                      <p className="mt-2 text-sm font-bold uppercase tracking-widest" style={{ color: 'rgba(255,255,255,0.4)' }}>{s.label}</p>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* ========== DOCTORS ========== */}
+          <div className="py-24">
+            <div className="mx-auto max-w-7xl px-6 md:px-10">
+              <motion.div initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="mb-12">
+                <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] mb-4" style={{ background: 'rgba(0,207,255,0.08)', border: '1px solid rgba(0,207,255,0.2)', color: '#00CFFF' }}>
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#00F5D4', boxShadow: '0 0 6px rgba(0,245,212,0.8)' }} />
+                  Our Specialists
+                </div>
+                <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white mb-3" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>Meet our expert doctors</h2>
+                <p className="max-w-xl text-base leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>Hover each card to discover their specialisation and book an instant consultation.</p>
+              </motion.div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
+                {DOCTORS.map((d, i) => <DoctorFlipCard key={d.name} doc={d} delay={i * 0.1} onBook={onSignIn} />)}
+              </div>
+            </div>
+          </div>
+
+          {/* ========== TESTIMONIALS ========== */}
+          <div className="py-24" style={{ background: 'linear-gradient(180deg, transparent, rgba(123,97,255,0.03), transparent)' }}>
+            <div className="mx-auto max-w-4xl px-6 md:px-10">
+              <motion.div initial={{ opacity: 0, y: 18 }} whileInView={{ opacity: 1, y: 0 }} viewport={{ once: true }} transition={{ duration: 0.6 }} className="mb-12 text-center">
+                <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] mb-4" style={{ background: 'rgba(123,97,255,0.08)', border: '1px solid rgba(123,97,255,0.2)', color: '#7B61FF' }}>
+                  <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#FF6B9D', boxShadow: '0 0 6px rgba(255,107,157,0.8)' }} />
+                  Patient Stories
+                </div>
+                <h2 className="text-3xl md:text-4xl font-bold tracking-tight text-white mb-3" style={{ fontFamily: "'Space Grotesk',sans-serif" }}>Lives changed by CareXAI</h2>
+                <p className="text-base leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>Real stories from patients and doctors who've experienced the future of healthcare.</p>
+              </motion.div>
+              <TestimonialsCarousel />
+            </div>
+          </div>
+        </>
+      ) : (
+        <div className="mx-auto max-w-7xl px-6 md:px-10 py-16">
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-6 sm:p-8 text-center">
+            <p className="text-xs font-bold uppercase tracking-[0.2em] text-slate-500">Loading Extended Experience</p>
+          </div>
+        </div>
+      )}
 
       {/* ========== CTA ========== */}
       <div id="cta" className="relative py-24">

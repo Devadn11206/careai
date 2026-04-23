@@ -83,6 +83,9 @@ export interface PatientProfile extends User {
   };
 }
 
+export type MedicationFrequency = 'ONCE_DAILY' | 'TWICE_DAILY' | 'THRICE_DAILY' | 'CUSTOM';
+export type MedicationDoseStatus = 'TAKEN' | 'MISSED' | 'PENDING';
+
 export interface Medication {
   id: string;
   patientId: string;
@@ -101,45 +104,49 @@ export interface Medication {
   active?: boolean;
 }
 
-export type MedicationFrequency = 'ONCE_DAILY' | 'TWICE_DAILY' | 'THRICE_DAILY' | 'CUSTOM';
-
-export type MedicationDoseStatus = 'PENDING' | 'TAKEN' | 'MISSED' | 'SKIPPED';
-
 export interface MedicationDoseScheduleItem {
+  id?: string;
   doseId: string;
-  patientId: string;
+  patientId?: string;
   medicationId: string;
-  medicationName: string;
-  dosage: string;
-  scheduledDate: string;
-  scheduledTime: string;
+  medicationName?: string;
+  dosage?: string;
   scheduledAt: string;
-  status: MedicationDoseStatus;
+  scheduledDate?: string;
+  scheduledTime?: string;
   takenAt?: string;
   updatedAt?: string;
+  updatedBy?: string;
+  status: MedicationDoseStatus;
 }
 
 export interface MedicationAdherenceRecord {
   doseId: string;
   patientId: string;
   medicationId: string;
-  scheduledAt: string;
-  status: MedicationDoseStatus;
+  date?: string;
+  time?: string;
+  scheduledAt?: string;
   takenAt?: string;
-  updatedAt: string;
-  updatedBy: 'PATIENT' | 'SYSTEM';
+  updatedAt?: string;
+  updatedBy?: string;
+  status: MedicationDoseStatus;
+  recordedAt?: string;
 }
 
 export interface MedicationMissedDoseAlert {
   id: string;
-  doctorId: string;
   patientId: string;
-  patientName: string;
-  doseId: string;
+  patientName?: string;
+  doctorId: string;
+  medicationId?: string;
   medicationName: string;
-  scheduledAt: string;
-  createdAt: string;
-  status: 'NEW' | 'ACKNOWLEDGED' | 'RESOLVED';
+  doseId: string;
+  date?: string;
+  time?: string;
+  status?: string;
+  createdAt?: string;
+  scheduledAt?: string;
 }
 
 export interface PrescriptionMedicine {
@@ -159,38 +166,17 @@ export interface PrescriptionOcrResult {
   summary?: string;
 }
 
-export interface NutritionMealItem {
-  name: string;
-  portion: string;
-  calories?: number;
-  notes?: string;
-  cuisineTag?: string;
-}
-
-export interface NutritionMealPlanDay {
-  day: number;
-  breakfast: NutritionMealItem[];
-  lunch: NutritionMealItem[];
-  snacks?: NutritionMealItem[];
-  dinner: NutritionMealItem[];
-  notes?: string;
-}
-
 export interface NutritionPlan {
-  generatedAt: string;
-  days: NutritionMealPlanDay[];
-  guidance?: {
-    focusAreas?: string[];
-    foodsToInclude?: string[];
-    foodsToLimit?: string[];
-    lifestyleTips?: string[];
-    hydrationTips?: string;
-    activityGuidance?: string;
-  };
+  id: string;
+  patientId: string;
+  createdAt: string;
+  overallGoal?: string;
+  dailyCaloriesRange?: string;
+  meals: any[];
+  guidance?: any;
   riskAlignmentSummary?: string;
   disclaimer?: string;
 }
-
 export interface SystemNotification {
   id: string;
   message: string;

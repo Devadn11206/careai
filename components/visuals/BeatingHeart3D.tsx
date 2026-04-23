@@ -118,8 +118,8 @@ function GlowShell({ bpm = 72 }: { bpm?: number }) {
       blending: THREE.AdditiveBlending,
       uniforms: {
         uBeat: { value: 0.2 },
-        uColorA: { value: new THREE.Color('#2563EB') },
-        uColorB: { value: new THREE.Color('#14B8A6') },
+        uColorA: { value: new THREE.Color('#00F5D4') },
+        uColorB: { value: new THREE.Color('#7B61FF') },
       },
       vertexShader: `
         varying vec3 vN;
@@ -176,29 +176,23 @@ function HeartCore({ bpm = 72 }: { bpm?: number }) {
 
   const coreColors = useMemo(() => {
     return {
-      blue: new THREE.Color('#2563EB'),
-      teal: new THREE.Color('#14B8A6'),
-      ice: new THREE.Color('#93C5FD'),
+      blue: new THREE.Color('#00CFFF'),
+      teal: new THREE.Color('#00F5D4'),
+      ice: new THREE.Color('#B8F0FF'),
       tmp: new THREE.Color(),
     };
   }, []);
 
   const material = useMemo(() => {
-    // Semi-transparent medical glass look.
-    const m = new THREE.MeshPhysicalMaterial({
-      color: new THREE.Color('#93C5FD'),
-      roughness: 0.25,
+    // Semi-transparent bioluminescent glass look.
+    const m = new THREE.MeshStandardMaterial({
+      color: new THREE.Color('#00CFFF'),
+      roughness: 0.18,
       metalness: 0.0,
-      transmission: 0.88,
       transparent: true,
-      opacity: 0.58,
-      thickness: 0.6,
-      ior: 1.35,
-      clearcoat: 1,
-      clearcoatRoughness: 0.25,
-      envMapIntensity: 0.35,
-      emissive: new THREE.Color('#14B8A6'),
-      emissiveIntensity: 0.22,
+      opacity: 0.65,
+      emissive: new THREE.Color('#00F5D4'),
+      emissiveIntensity: 0.35,
     });
     return m;
   }, []);
@@ -224,14 +218,14 @@ function HeartCore({ bpm = 72 }: { bpm?: number }) {
 
     // Glow synced with beat.
     if (matRef.current) {
-      matRef.current.emissiveIntensity = 0.18 + beat * 0.55;
-      // Slight color shift per beat (blue -> teal).
+      matRef.current.emissiveIntensity = 0.28 + beat * 0.85;
+      // Shift from cyan -> teal on beat.
       coreColors.tmp.copy(coreColors.blue).lerp(coreColors.teal, 0.55 + 0.35 * beat);
-      matRef.current.color.copy(coreColors.tmp).lerp(coreColors.ice, 0.55);
+      matRef.current.color.copy(coreColors.tmp).lerp(coreColors.ice, 0.45);
     }
 
     if (lightRef.current) {
-      lightRef.current.intensity = 0.8 + beat * 1.45;
+      lightRef.current.intensity = 1.2 + beat * 2.2;
     }
   });
 
@@ -240,9 +234,15 @@ function HeartCore({ bpm = 72 }: { bpm?: number }) {
       <pointLight
         ref={lightRef}
         position={[0.6, 0.25, 1.35]}
-        color={'#14B8A6'}
-        intensity={1.1}
-        distance={6}
+        color={'#00F5D4'}
+        intensity={1.5}
+        distance={7}
+      />
+      <pointLight
+        position={[-0.8, -0.3, 0.9]}
+        color={'#7B61FF'}
+        intensity={0.6}
+        distance={5}
       />
       <mesh ref={meshRef} geometry={geom} material={material} />
       <GlowShell bpm={bpm} />
@@ -284,8 +284,8 @@ function Particles({ bpm = 72 }: { bpm?: number }) {
       uniforms: {
         uTime: { value: 0 },
         uBeat: { value: 0.2 },
-        uColorA: { value: new THREE.Color('#2563EB') },
-        uColorB: { value: new THREE.Color('#14B8A6') },
+        uColorA: { value: new THREE.Color('#00F5D4') },
+        uColorB: { value: new THREE.Color('#00CFFF') },
       },
       vertexShader: `
         uniform float uTime;
@@ -359,9 +359,10 @@ function Particles({ bpm = 72 }: { bpm?: number }) {
 function Scene({ bpm = 72 }: { bpm?: number }) {
   return (
     <group>
-      <ambientLight intensity={0.55} />
-      <directionalLight position={[-2.4, 2.2, 2.0]} intensity={1.0} color={'#93C5FD'} />
-      <directionalLight position={[2.6, -1.8, 1.2]} intensity={0.55} color={'#14B8A6'} />
+      <ambientLight intensity={0.4} />
+      <directionalLight position={[-2.4, 2.2, 2.0]} intensity={1.2} color={'#00CFFF'} />
+      <directionalLight position={[2.6, -1.8, 1.2]} intensity={0.7} color={'#00F5D4'} />
+      <directionalLight position={[0, 0, -2]} intensity={0.3} color={'#7B61FF'} />
       <Particles bpm={bpm} />
       <HeartCore bpm={bpm} />
     </group>
@@ -391,7 +392,7 @@ export const BeatingHeart3D: React.FC<Props> = ({ className = '', bpm = 72 }) =>
   return (
     <div className={`relative ${className}`} aria-label="3D heart visualization">
       <Canvas
-        dpr={[1, 1.5]}
+        dpr={[1, 1]}
         camera={{ position: [0, 0.12, 3.15], fov: 40 }}
         gl={{ antialias: true, alpha: true, powerPreference: 'high-performance' }}
       >

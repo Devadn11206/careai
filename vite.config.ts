@@ -51,6 +51,47 @@ export default defineConfig(({ mode }) => {
       'process.env.API_KEY': JSON.stringify(env.GEMINI_API_KEY),
       'process.env.GEMINI_API_KEY': JSON.stringify(env.GEMINI_API_KEY)
     },
+    build: {
+      // Agora SDK is distributed as a large monolithic bundle; keep warnings for anything bigger.
+      chunkSizeWarningLimit: 1400,
+      rollupOptions: {
+        output: {
+          manualChunks(id) {
+            if (!id.includes('node_modules')) return undefined;
+
+            if (id.includes('react-dom') || id.includes('react')) {
+              return 'react-vendor';
+            }
+
+            if (id.includes('framer-motion')) {
+              return 'motion-vendor';
+            }
+
+            if (id.includes('@react-three') || id.includes('three')) {
+              return 'three-vendor';
+            }
+
+            if (id.includes('recharts') || id.includes('d3-')) {
+              return 'charts-vendor';
+            }
+
+            if (id.includes('agora-rtc-sdk-ng')) {
+              return 'agora-vendor';
+            }
+
+            if (id.includes('socket.io-client') || id.includes('engine.io-client')) {
+              return 'socket-vendor';
+            }
+
+            if (id.includes('@google/genai')) {
+              return 'ai-vendor';
+            }
+
+            return 'vendor';
+          }
+        }
+      }
+    },
     resolve: {
       alias: {
         '@': path.resolve(__dirname, '.'),

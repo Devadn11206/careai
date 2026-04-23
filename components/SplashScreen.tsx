@@ -1,6 +1,7 @@
 
 import React, { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import { HoloBackdrop3D } from './visuals/HoloBackdrop3D';
 
 interface Props {
   onComplete: () => void;
@@ -118,8 +119,10 @@ export const SplashScreen: React.FC<Props> = ({ onComplete }) => {
   return (
     <div className="fixed inset-0 z-[100] overflow-hidden font-sans" style={{ background: '#050A14' }}>
 
+      <HoloBackdrop3D className="opacity-90" intensity={1.1} />
+
       {/* Neural particle canvas */}
-      <ParticleCanvas />
+      <div className="absolute inset-0 bg-[radial-gradient(circle_at_top_left,rgba(0,212,255,0.08),transparent_34%),radial-gradient(circle_at_75%_30%,rgba(0,255,179,0.08),transparent_26%)]" />
 
       {/* Ambient glow blobs */}
       <div className="absolute inset-0 pointer-events-none">
@@ -301,7 +304,7 @@ export const SplashScreen: React.FC<Props> = ({ onComplete }) => {
               onClick={onComplete}
               whileHover={{ scale: 1.05, y: -2 }}
               whileTap={{ scale: 0.97 }}
-              className="relative overflow-hidden px-10 py-4 rounded-full text-lg font-bold text-white shimmer-btn mb-6"
+              className="relative overflow-hidden px-10 py-4 rounded-[22px] text-lg font-bold text-white shimmer-btn mb-6"
               style={{
                 background: 'linear-gradient(135deg, #00D4FF 0%, #00FFB3 100%)',
                 boxShadow: '0 0 30px rgba(0,212,255,0.5), 0 0 60px rgba(0,212,255,0.2)',
