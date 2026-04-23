@@ -1,4 +1,4 @@
-import React, { Suspense, useMemo } from 'react';
+import React, { Suspense, useMemo, useRef, useEffect } from 'react';
 import { motion, useReducedMotion } from 'framer-motion';
 import { Button } from '../components/ui/Button';
 
@@ -8,153 +8,142 @@ interface LandingPageProps {
   onSignIn: () => void;
 }
 
-const Section: React.FC<{
-  id?: string;
-  eyebrow: string;
-  title: string;
-  subtitle: string;
-  children: React.ReactNode;
-}> = ({ id, eyebrow, title, subtitle, children }) => {
+// Particle canvas for hero background
+const HeroParticles: React.FC = () => {
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  useEffect(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return;
+    let animId: number;
+    const pts: { x: number; y: number; vx: number; vy: number; r: number; c: string }[] = [];
+    const COLS = ['#00D4FF', '#00FFB3', '#7aeeff'];
+    const resize = () => { canvas.width = canvas.offsetWidth; canvas.height = canvas.offsetHeight; };
+    resize();
+    window.addEventListener('resize', resize);
+    for (let i = 0; i < 50; i++) {
+      pts.push({ x: Math.random() * canvas.width, y: Math.random() * canvas.height, vx: (Math.random() - .5) * .3, vy: (Math.random() - .5) * .3, r: Math.random() * 1.5 + .5, c: COLS[Math.floor(Math.random() * 3)] });
+    }
+    const draw = () => {
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      pts.forEach(p => {
+        p.x += p.vx; p.y += p.vy;
+        if (p.x < 0 || p.x > canvas.width) p.vx *= -1;
+        if (p.y < 0 || p.y > canvas.height) p.vy *= -1;
+        ctx.beginPath(); ctx.arc(p.x, p.y, p.r, 0, Math.PI * 2);
+        ctx.fillStyle = p.c + '66'; ctx.fill();
+      });
+      pts.forEach((a, i) => pts.slice(i + 1).forEach(b => {
+        const d = Math.hypot(a.x - b.x, a.y - b.y);
+        if (d < 100) { ctx.beginPath(); ctx.moveTo(a.x, a.y); ctx.lineTo(b.x, b.y); ctx.strokeStyle = `rgba(0,212,255,${(1 - d / 100) * .2})`; ctx.lineWidth = .5; ctx.stroke(); }
+      }));
+      animId = requestAnimationFrame(draw);
+    };
+    draw();
+    return () => { cancelAnimationFrame(animId); window.removeEventListener('resize', resize); };
+  }, []);
+  return <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" style={{ opacity: .6 }} />;
+};
+
+// Animated mini stat card
+const StatCard: React.FC<{ label: string; value: string; color: string; delay?: number }> = ({ label, value, color, delay = 0 }) => (
+  <motion.div
+    initial={{ opacity: 0, scale: 0.8 }}
+    animate={{ opacity: 1, scale: 1 }}
+    transition={{ delay, duration: 0.5, type: 'spring', stiffness: 200 }}
+    className="rounded-2xl px-4 py-3 text-center"
+    style={{ background: `${color}10`, border: `1px solid ${color}30`, backdropFilter: 'blur(12px)' }}
+  >
+    <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: `${color}99` }}>{label}</p>
+    <p className="text-base font-bold" style={{ color }}>{value}</p>
+  </motion.div>
+);
+
+// Feature card
+const FeatureCard: React.FC<{ title: string; desc: string; index: number; icon: string }> = ({ title, desc, index, icon }) => {
+  const reduceMotion = useReducedMotion();
+  const neonColors = ['#00D4FF', '#00FFB3', '#FF006E', '#00D4FF', '#00FFB3'];
+  const color = neonColors[index % neonColors.length];
+
   return (
-    <motion.section
-      id={id}
-      initial={{ opacity: 0, y: 18 }}
+    <motion.div
+      initial={{ opacity: 0, y: 24 }}
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.2 }}
-      transition={{ duration: 0.6, ease: 'easeOut' }}
-      className="mx-auto max-w-7xl px-6 md:px-10"
+      transition={{ duration: 0.5, delay: index * 0.08 }}
+      whileHover={reduceMotion ? undefined : { y: -8, scale: 1.01 }}
+      className="group relative rounded-2xl p-6 overflow-hidden cursor-default"
+      style={{
+        background: 'rgba(5,10,20,0.6)',
+        border: `1px solid ${color}20`,
+        backdropFilter: 'blur(16px)',
+        transition: 'box-shadow 0.3s ease',
+      }}
+      onMouseEnter={e => (e.currentTarget.style.boxShadow = `0 0 30px ${color}15, 0 20px 40px rgba(0,0,0,0.3)`)}
+      onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
     >
-      <div className="mb-10">
-        <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 backdrop-blur">
-          <span className="h-1.5 w-1.5 rounded-full bg-secondary-500" />
-          {eyebrow}
-        </div>
-        <h2 className="mt-4 text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white">{title}</h2>
-        <p className="mt-3 max-w-2xl text-base md:text-lg text-slate-600 dark:text-slate-300 leading-relaxed">{subtitle}</p>
-      </div>
-      {children}
-    </motion.section>
-  );
-};
+      {/* Background gradient on hover */}
+      <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
+        style={{ background: `radial-gradient(circle at top left, ${color}08, transparent 60%)` }}
+      />
 
-const MiniChart: React.FC<{ compact?: boolean }> = ({ compact }) => {
-  const reduceMotion = useReducedMotion();
-
-  const points = useMemo(() => {
-    // Smooth-ish path across 12 points (deterministic)
-    const values = [22, 24, 23, 26, 29, 28, 31, 30, 33, 35, 34, 38];
-    const width = 220;
-    const height = 86;
-    const pad = 8;
-    const xStep = (width - pad * 2) / (values.length - 1);
-    const min = Math.min(...values);
-    const max = Math.max(...values);
-    const y = (v: number) => {
-      const t = (v - min) / (max - min || 1);
-      return height - pad - t * (height - pad * 2);
-    };
-
-    const pts = values.map((v, i) => ({ x: pad + xStep * i, y: y(v) }));
-    return { pts, width, height };
-  }, []);
-
-  const d = useMemo(() => {
-    const { pts } = points;
-    // Simple smooth curve using quadratic beziers
-    let path = `M ${pts[0].x} ${pts[0].y}`;
-    for (let i = 1; i < pts.length; i++) {
-      const prev = pts[i - 1];
-      const cur = pts[i];
-      const cx = (prev.x + cur.x) / 2;
-      const cy = (prev.y + cur.y) / 2;
-      path += ` Q ${prev.x} ${prev.y} ${cx} ${cy}`;
-    }
-    const last = pts[pts.length - 1];
-    path += ` T ${last.x} ${last.y}`;
-    return path;
-  }, [points]);
-
-  const glow = compact ? 'blur-[14px]' : 'blur-[22px]';
-
-  return (
-    <div className="relative">
-      <div className={`absolute -inset-6 bg-gradient-to-tr from-primary-600/18 via-secondary-500/10 to-indigo-500/10 ${glow}`} />
-      <div className="relative rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/70 backdrop-blur p-4">
-        <div className="flex items-center justify-between mb-3">
-          <div>
-            <p className="text-xs font-bold text-slate-800 dark:text-slate-100">Health signals</p>
-            <p className="text-[11px] text-slate-500 dark:text-slate-400">Trends update in real time</p>
-          </div>
-          <div className="rounded-full border border-secondary-200/60 dark:border-secondary-900/40 bg-secondary-50/70 dark:bg-secondary-900/25 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-secondary-700 dark:text-secondary-300">
-            HIPAA-ready
-          </div>
-        </div>
-
-        <svg
-          viewBox={`0 0 ${points.width} ${points.height}`}
-          className="w-full h-[90px]"
-          aria-hidden
+      {/* Index badge */}
+      <div className="flex items-start justify-between gap-4 mb-4">
+        <div
+          className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+          style={{ background: `${color}15`, border: `1px solid ${color}30`, boxShadow: `0 0 10px ${color}20` }}
         >
-          <defs>
-            <linearGradient id="cxaiLine" x1="0" y1="0" x2="1" y2="0">
-              <stop offset="0%" stopColor="#2563EB" stopOpacity="1" />
-              <stop offset="55%" stopColor="#14B8A6" stopOpacity="1" />
-              <stop offset="100%" stopColor="#6366f1" stopOpacity="0.9" />
-            </linearGradient>
-            <linearGradient id="cxaiFill" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stopColor="#2563EB" stopOpacity="0.22" />
-              <stop offset="100%" stopColor="#2563EB" stopOpacity="0" />
-            </linearGradient>
-          </defs>
-
-          <path
-            d={`${d} L ${points.width - 8} ${points.height - 8} L 8 ${points.height - 8} Z`}
-            fill="url(#cxaiFill)"
-          />
-
-          <motion.path
-            d={d}
-            fill="none"
-            stroke="url(#cxaiLine)"
-            strokeWidth="3"
-            strokeLinecap="round"
-            initial={reduceMotion ? false : { pathLength: 0, opacity: 0.7 }}
-            animate={reduceMotion ? { opacity: 1 } : { pathLength: 1, opacity: 1 }}
-            transition={{ duration: 1.2, ease: 'easeInOut' }}
-          />
-
-          {!reduceMotion && (
-            <motion.circle
-              r="4"
-              fill="#14B8A6"
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              transition={{ delay: 0.9 }}
-            >
-              <animateMotion dur="2.2s" repeatCount="indefinite" path={d} />
-            </motion.circle>
-          )}
-        </svg>
-
-        <div className="mt-3 grid grid-cols-3 gap-3">
-          {[
-            { k: 'HR', v: '72 bpm' },
-            { k: 'SpO₂', v: '98%' },
-            { k: 'BP', v: '118/76' },
-          ].map((m) => (
-            <div
-              key={m.k}
-              className="rounded-xl border border-slate-200/70 dark:border-slate-800 bg-white/60 dark:bg-slate-900/60 px-3 py-2"
-            >
-              <p className="text-[10px] font-extrabold uppercase tracking-wider text-slate-400 dark:text-slate-500">{m.k}</p>
-              <p className="text-sm font-bold text-slate-800 dark:text-slate-100">{m.v}</p>
-            </div>
-          ))}
+          {icon}
         </div>
+        <span
+          className="text-2xl font-bold opacity-20 group-hover:opacity-40 transition-opacity"
+          style={{ fontFamily: "'Space Grotesk', sans-serif", color }}
+        >
+          {String(index + 1).padStart(2, '0')}
+        </span>
       </div>
-    </div>
+
+      <h3 className="text-sm font-bold text-white mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</h3>
+      <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>{desc}</p>
+
+      {/* Bottom neon line */}
+      <div className="absolute bottom-0 left-0 h-px w-0 group-hover:w-full transition-all duration-500 rounded-full"
+        style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }}
+      />
+    </motion.div>
   );
 };
+
+// Section wrapper
+const Section: React.FC<{ id?: string; eyebrow: string; title: string; subtitle: string; children: React.ReactNode; light?: boolean }> = ({ id, eyebrow, title, subtitle, children, light }) => (
+  <motion.section
+    id={id}
+    initial={{ opacity: 0, y: 18 }}
+    whileInView={{ opacity: 1, y: 0 }}
+    viewport={{ once: true, amount: 0.15 }}
+    transition={{ duration: 0.6, ease: 'easeOut' }}
+    className="mx-auto max-w-7xl px-6 md:px-10"
+  >
+    <div className="mb-10">
+      <div className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] mb-4"
+        style={{
+          background: light ? 'rgba(0,212,255,0.1)' : 'rgba(0,212,255,0.08)',
+          border: '1px solid rgba(0,212,255,0.2)',
+          color: '#00D4FF',
+        }}>
+        <span className="h-1.5 w-1.5 rounded-full" style={{ background: '#00FFB3', boxShadow: '0 0 6px rgba(0,255,179,0.8)' }} />
+        {eyebrow}
+      </div>
+      <h2
+        className="text-3xl md:text-4xl font-bold tracking-tight text-slate-900 dark:text-white mb-3"
+        style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+      >{title}</h2>
+      <p className="max-w-2xl text-base md:text-lg leading-relaxed text-slate-600 dark:text-slate-400">{subtitle}</p>
+    </div>
+    {children}
+  </motion.section>
+);
 
 export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
   const reduceMotion = useReducedMotion();
@@ -164,300 +153,293 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
     if (el) el.scrollIntoView({ behavior: 'smooth', block: 'start' });
   };
 
-  return (
-    <div className="relative overflow-hidden bg-slate-50 dark:bg-slate-950">
-      {/* Ambient gradient motion */}
-      <div className="pointer-events-none absolute inset-0">
-        <div className="absolute inset-0 cxai-gradient-motion opacity-80" />
-        <div className="absolute -top-24 -left-24 h-[360px] w-[360px] rounded-full bg-primary-300/20 blur-3xl animate-blob" />
-        <div className="absolute top-12 -right-24 h-[320px] w-[320px] rounded-full bg-indigo-300/15 blur-3xl animate-blob animation-delay-2000" />
-        <div className="absolute -bottom-28 left-1/4 h-[340px] w-[340px] rounded-full bg-secondary-300/15 blur-3xl animate-blob animation-delay-4000" />
-      </div>
+  const features = [
+    { icon: '💬', title: 'Real-time patient–doctor communication', desc: 'Secure chat and consultation-ready messaging to keep care teams aligned.' },
+    { icon: '🧠', title: 'AI-powered health risk prediction', desc: 'Risk insights from reports and health data to support earlier intervention.' },
+    { icon: '🔐', title: 'Secure clinical decision support', desc: 'Summaries, alerts, and trends presented with clarity—not noise.' },
+    { icon: '📅', title: 'Smart appointment & consultation workflows', desc: 'Booking, queue visibility, and guided steps for patients and clinicians.' },
+    { icon: '📊', title: 'Live vitals & health trend monitoring', desc: 'Vitals charts and history tracking for better follow-ups and continuity of care.' },
+  ];
 
-      {/* Top nav */}
-      <div className="relative z-10 mx-auto max-w-7xl px-6 md:px-10 pt-6">
-        <div className="flex items-center justify-between rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/65 backdrop-blur px-5 py-4 shadow-sm">
-          <button
-            onClick={() => scrollTo('top')}
-            className="flex items-center gap-3"
-            aria-label="CareXAI Home"
-          >
-            <div className="w-10 h-10 bg-gradient-to-br from-primary-600 to-secondary-500 rounded-xl flex items-center justify-center text-white font-extrabold text-xl shadow-lg shadow-primary-500/20 ring-2 ring-primary-100 dark:ring-primary-900/30">
-              C
-            </div>
-            <div className="leading-tight">
-              <div className="text-lg font-extrabold tracking-tight text-slate-900 dark:text-white">
-                CareX<span className="text-secondary-500">AI</span>
-              </div>
-              <div className="text-[11px] text-slate-500 dark:text-slate-400">Healthcare intelligence, made simple</div>
-            </div>
+  return (
+    <div className="relative overflow-x-hidden bg-slate-50 dark:bg-space-950" style={{ fontFamily: "'Inter', sans-serif" }}>
+
+      {/* ========== NAVBAR ========== */}
+      <div className="relative z-20 mx-auto max-w-7xl px-6 md:px-10 pt-6">
+        <div
+          className="flex items-center justify-between rounded-2xl px-5 py-3.5"
+          style={{
+            background: 'rgba(5,10,20,0.7)',
+            border: '1px solid rgba(0,212,255,0.15)',
+            backdropFilter: 'blur(20px)',
+            boxShadow: '0 0 20px rgba(0,212,255,0.05)',
+          }}
+        >
+          <button onClick={() => scrollTo('top')} className="flex items-center gap-3" aria-label="CareXAI Home">
+            <div
+              className="w-9 h-9 rounded-xl flex items-center justify-center font-bold text-base"
+              style={{
+                background: 'linear-gradient(135deg, #00D4FF, #00FFB3)',
+                color: '#050A14',
+                boxShadow: '0 0 15px rgba(0,212,255,0.4)',
+              }}
+            >C</div>
+            <span className="text-lg font-bold text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+              CareX<span style={{ color: '#00D4FF', textShadow: '0 0 10px rgba(0,212,255,0.6)' }}>AI</span>
+            </span>
           </button>
 
-          <div className="hidden md:flex items-center gap-2">
-            {[
-              { id: 'features', label: 'Features' },
-              { id: 'workflow', label: 'Workflow' },
-              { id: 'trust', label: 'Trust' },
-            ].map((l) => (
+          <div className="hidden md:flex items-center gap-1">
+            {[{ id: 'features', label: 'Features' }, { id: 'workflow', label: 'Workflow' }, { id: 'trust', label: 'Trust' }].map(l => (
               <button
                 key={l.id}
                 onClick={() => scrollTo(l.id)}
-                className="px-3 py-2 rounded-xl text-sm font-semibold text-slate-600 dark:text-slate-300 hover:text-slate-900 dark:hover:text-white hover:bg-slate-100/70 dark:hover:bg-slate-800/50 transition"
-              >
-                {l.label}
-              </button>
+                className="px-3 py-2 rounded-xl text-sm font-semibold transition-all text-slate-400 hover:text-white hover:bg-white/5"
+              >{l.label}</button>
             ))}
           </div>
 
           <div className="flex items-center gap-2">
-            <Button variant="outline" size="sm" onClick={onSignIn} className="rounded-xl">
+            <Button variant="cyber" size="sm" onClick={onSignIn} className="rounded-xl">
               Sign in
             </Button>
             <motion.button
-              onClick={() => {
-                scrollTo('cta');
+              onClick={() => scrollTo('cta')}
+              whileHover={reduceMotion ? undefined : { scale: 1.04, y: -1 }}
+              whileTap={reduceMotion ? undefined : { scale: 0.97 }}
+              className="relative overflow-hidden rounded-xl px-4 py-2 text-sm font-bold shimmer-btn"
+              style={{
+                background: 'linear-gradient(135deg, #00D4FF 0%, #00FFB3 100%)',
+                color: '#050A14',
+                boxShadow: '0 0 20px rgba(0,212,255,0.4)',
               }}
-              whileHover={reduceMotion ? undefined : { scale: 1.03 }}
-              whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-              className="relative overflow-hidden rounded-xl bg-gradient-to-r from-primary-600 to-secondary-500 px-4 py-2 text-sm font-extrabold text-white shadow-lg shadow-primary-500/25"
             >
-              {!reduceMotion && (
-                <motion.span
-                  aria-hidden
-                  className="absolute -left-1/3 top-0 h-full w-1/3 bg-white/25 skew-x-[-18deg]"
-                  animate={{ x: ['-40%', '220%'] }}
-                  transition={{ duration: 1.8, repeat: Infinity, repeatDelay: 2.8, ease: 'easeInOut' }}
-                />
-              )}
               <span className="relative z-10">Get started</span>
             </motion.button>
           </div>
         </div>
       </div>
 
-      {/* Hero */}
-      <div id="top" className="relative z-10 mx-auto max-w-7xl px-6 md:px-10 pt-14 pb-16">
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-10 items-center">
-          <motion.div
-            initial={{ opacity: 0, y: 16 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.7, ease: 'easeOut' }}
-          >
-            <div className="inline-flex items-center gap-2 rounded-full border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400 backdrop-blur">
-              <span className="h-1.5 w-1.5 rounded-full bg-secondary-500" />
-              AI-powered telehealth ecosystem
-            </div>
+      {/* ========== HERO ========== */}
+      <div id="top" className="relative min-h-screen flex items-center overflow-hidden">
+        {/* Background elements */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute inset-0 grid-dot-bg-animated opacity-30 dark:opacity-100" />
+          <div className="absolute top-1/4 -left-32 w-96 h-96 rounded-full blur-[120px] opacity-30" style={{ background: 'rgba(0,212,255,0.15)' }} />
+          <div className="absolute bottom-1/4 -right-32 w-96 h-96 rounded-full blur-[120px] opacity-20" style={{ background: 'rgba(0,255,179,0.12)' }} />
+          <div className="absolute inset-0 hidden dark:block">
+            <HeroParticles />
+          </div>
+        </div>
 
-            <h1 className="mt-5 text-4xl md:text-6xl font-extrabold tracking-tight text-slate-900 dark:text-white leading-[1.02]">
-              CareXAI —
-              <span className="block bg-clip-text text-transparent bg-gradient-to-r from-primary-600 via-secondary-500 to-indigo-500"> Healthcare Intelligence Made Simple</span>
-            </h1>
-            <p className="mt-5 text-base md:text-lg text-slate-600 dark:text-slate-300 leading-relaxed max-w-xl">
-              AI-powered telehealth platform combining appointments, clinical insights, risk prediction, and secure doctor–patient communication in one intelligent healthcare ecosystem.
-            </p>
+        <div className="relative z-10 mx-auto max-w-7xl px-6 md:px-10 pt-32 pb-24 w-full">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-12 items-center">
 
-            <div className="mt-8 flex flex-col sm:flex-row gap-3">
-              <motion.button
-                onClick={() => scrollTo('cta')}
-                whileHover={reduceMotion ? undefined : { y: -2 }}
-                whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-                className="rounded-2xl bg-gradient-to-r from-primary-600 to-secondary-500 px-6 py-3.5 text-white font-extrabold shadow-xl shadow-primary-500/25"
+            {/* Left: text */}
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.7, ease: 'easeOut' }}
+            >
+              {/* Eyebrow badge */}
+              <div
+                className="inline-flex items-center gap-2 rounded-full px-4 py-1.5 text-[10px] font-extrabold uppercase tracking-[0.18em] mb-6"
+                style={{ background: 'rgba(0,212,255,0.1)', border: '1px solid rgba(0,212,255,0.25)', color: '#00D4FF', backdropFilter: 'blur(8px)' }}
               >
-                Get Started
-              </motion.button>
-              <Button
-                variant="outline"
-                size="lg"
-                onClick={onSignIn}
-                className="rounded-2xl"
-              >
-                Upload Health Report
-              </Button>
-            </div>
+                <motion.span
+                  animate={{ scale: [1, 1.3, 1] }}
+                  transition={{ duration: 1.5, repeat: Infinity }}
+                  className="h-2 w-2 rounded-full"
+                  style={{ background: '#00FFB3', boxShadow: '0 0 8px rgba(0,255,179,0.8)' }}
+                />
+                AI-Powered Telehealth Ecosystem
+              </div>
 
-            <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3">
-              {[
-                { k: 'Key highlight', v: 'Real-time patient–doctor communication' },
-                { k: 'Key highlight', v: 'AI-powered health risk prediction' },
-                { k: 'Key highlight', v: 'Secure clinical decision support' },
-                { k: 'Key highlight', v: 'Smart appointment and consultation workflows' },
-                { k: 'Key highlight', v: 'Live vitals and health trend monitoring' },
-              ].map((p, idx) => (
-                <motion.div
-                  key={`${p.v}_${idx}`}
-                  whileHover={reduceMotion ? undefined : { y: -4 }}
-                  transition={{ type: 'spring', stiffness: 260, damping: 20 }}
-                  className="rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur px-4 py-3 shadow-sm"
+              <h1
+                className="text-5xl md:text-7xl font-bold tracking-tight text-slate-900 dark:text-white leading-[1.02] mb-6"
+                style={{ fontFamily: "'Space Grotesk', sans-serif" }}
+              >
+                CareXAI —{' '}
+                <span
+                  className="block"
+                  style={{
+                    background: 'linear-gradient(135deg, #00D4FF 0%, #00FFB3 50%, #7aeeff 100%)',
+                    WebkitBackgroundClip: 'text',
+                    WebkitTextFillColor: 'transparent',
+                    backgroundClip: 'text',
+                    filter: 'drop-shadow(0 0 20px rgba(0,212,255,0.3))',
+                  }}
                 >
-                  <div className="text-[10px] font-extrabold uppercase tracking-[0.16em] text-slate-400 dark:text-slate-500">{p.k}</div>
-                  <div className="mt-1 text-sm font-bold text-slate-800 dark:text-slate-100">{p.v}</div>
-                </motion.div>
-              ))}
-            </div>
-          </motion.div>
+                  Healthcare Intelligence
+                </span>
+              </h1>
 
-          <motion.div
-            initial={{ opacity: 0, y: 18 }}
-            animate={{ opacity: 1, y: 0 }}
-            transition={{ duration: 0.8, ease: 'easeOut', delay: 0.1 }}
-            className="lg:pl-8"
-          >
-            <div className="relative rounded-3xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur shadow-sm overflow-hidden">
-              <div className="absolute inset-0 bg-gradient-to-tr from-primary-600/12 via-transparent to-secondary-500/10" />
-              <div className="relative p-5">
-                <div className="flex items-start justify-between gap-4">
+              <p className="text-base md:text-lg text-slate-600 dark:text-slate-400 leading-relaxed max-w-xl mb-8">
+                AI-powered telehealth platform combining appointments, clinical insights, risk prediction, and secure doctor–patient communication in one intelligent healthcare ecosystem.
+              </p>
+
+              <div className="flex flex-col sm:flex-row gap-3 mb-10">
+                <motion.button
+                  onClick={() => scrollTo('cta')}
+                  whileHover={reduceMotion ? undefined : { y: -3, scale: 1.02 }}
+                  whileTap={reduceMotion ? undefined : { scale: 0.97 }}
+                  className="relative overflow-hidden rounded-2xl px-7 py-4 text-base font-bold shimmer-btn"
+                  style={{
+                    background: 'linear-gradient(135deg, #00D4FF 0%, #00FFB3 100%)',
+                    color: '#050A14',
+                    boxShadow: '0 0 30px rgba(0,212,255,0.4), 0 10px 30px rgba(0,0,0,0.2)',
+                  }}
+                >
+                  <span className="relative z-10">Get Started</span>
+                </motion.button>
+                <Button variant="cyber" size="lg" onClick={onSignIn} className="rounded-2xl">
+                  Sign In →
+                </Button>
+              </div>
+
+              {/* Live stats */}
+              <div className="grid grid-cols-3 gap-3">
+                <StatCard label="Heart Rate" value="72 bpm" color="#00D4FF" delay={0.3} />
+                <StatCard label="SpO₂" value="98%" color="#00FFB3" delay={0.4} />
+                <StatCard label="BP" value="118/76" color="#7aeeff" delay={0.5} />
+              </div>
+            </motion.div>
+
+            {/* Right: 3D heart visualization */}
+            <motion.div
+              initial={{ opacity: 0, y: 24 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ duration: 0.8, ease: 'easeOut', delay: 0.15 }}
+            >
+              <div
+                className="relative rounded-3xl overflow-hidden"
+                style={{
+                  background: 'rgba(5,10,20,0.7)',
+                  border: '1px solid rgba(0,212,255,0.2)',
+                  backdropFilter: 'blur(20px)',
+                  boxShadow: '0 0 40px rgba(0,212,255,0.1), 0 40px 80px rgba(0,0,0,0.3)',
+                }}
+              >
+                {/* Header */}
+                <div className="p-5 pb-0 flex items-start justify-between gap-4">
                   <div>
-                    <div className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-500 dark:text-slate-400">Live clinical visualization</div>
-                    <div className="mt-1 text-base font-extrabold text-slate-900 dark:text-white">Semi‑transparent 3D heart</div>
-                    <div className="mt-1 text-sm text-slate-600 dark:text-slate-300">Soft blue‑teal lighting, gentle pulse, minimal monitoring particles.</div>
+                    <div className="text-[10px] font-extrabold uppercase tracking-[0.18em] mb-1" style={{ color: 'rgba(0,212,255,0.6)' }}>Live Clinical Visualization</div>
+                    <div className="text-base font-bold text-white" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>3D Cardiac Monitor</div>
                   </div>
-                  <div className="shrink-0 rounded-2xl border border-secondary-200/60 dark:border-secondary-900/40 bg-secondary-50/70 dark:bg-secondary-900/25 px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider text-secondary-700 dark:text-secondary-300">
-                    Lightweight
+                  <div
+                    className="flex-shrink-0 rounded-xl px-3 py-1 text-[10px] font-extrabold uppercase tracking-wider"
+                    style={{ background: 'rgba(0,255,179,0.1)', border: '1px solid rgba(0,255,179,0.2)', color: '#00FFB3' }}
+                  >
+                    Live
                   </div>
                 </div>
 
-                <Suspense
-                  fallback={
-                    <div className="mt-4 h-[320px] sm:h-[380px] w-full rounded-3xl border border-slate-200/70 dark:border-slate-800 bg-gradient-to-tr from-primary-600/8 via-white/10 to-secondary-500/10" />
-                  }
-                >
-                  <BeatingHeart3D className="mt-4 h-[320px] sm:h-[380px] w-full" bpm={72} />
+                <Suspense fallback={
+                  <div className="mt-4 h-[320px] sm:h-[360px] w-full flex items-center justify-center">
+                    <div className="w-16 h-16 rounded-full border-2 border-neon-400/30 border-t-neon-400 animate-spin" />
+                  </div>
+                }>
+                  <BeatingHeart3D className="mt-2 h-[320px] sm:h-[360px] w-full" bpm={72} />
                 </Suspense>
-              </div>
-            </div>
 
-            <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              transition={{ delay: 0.35, duration: 0.6 }}
-              className="mt-5 grid grid-cols-1 sm:grid-cols-2 gap-4"
-            >
-              {[{
-                title: 'Queue visibility',
-                body: 'Patients see their live position. Doctors see ahead/delay.'
-              }, {
-                title: 'AI-ready workflows',
-                body: 'Triage, summaries, and report parsing—when you need it.'
-              }].map((c) => (
-                <motion.div
-                  key={c.title}
-                  whileHover={reduceMotion ? undefined : { y: -6 }}
-                  className="rounded-2xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur p-5 shadow-sm"
-                >
-                  <div className="text-sm font-extrabold text-slate-900 dark:text-white">{c.title}</div>
-                  <div className="mt-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{c.body}</div>
-                </motion.div>
-              ))}
+                {/* ECG strip at bottom */}
+                <div className="p-4 pt-2">
+                  <svg viewBox="0 0 400 30" className="w-full h-8" preserveAspectRatio="none">
+                    <defs>
+                      <linearGradient id="landingEcg" x1="0" y1="0" x2="1" y2="0">
+                        <stop offset="0%" stopColor="rgba(0,212,255,0)" />
+                        <stop offset="30%" stopColor="#00D4FF" />
+                        <stop offset="70%" stopColor="#00FFB3" />
+                        <stop offset="100%" stopColor="rgba(0,255,179,0)" />
+                      </linearGradient>
+                    </defs>
+                    <motion.path
+                      d="M0 15 H80 L95 15 L105 3 L115 27 L125 15 H200 L215 15 L225 2 L235 28 L245 15 H400"
+                      fill="none" stroke="url(#landingEcg)" strokeWidth="1.5" strokeLinecap="round"
+                      style={{ filter: 'drop-shadow(0 0 3px rgba(0,212,255,0.5))' }}
+                      initial={{ pathLength: 0 }}
+                      animate={{ pathLength: 1 }}
+                      transition={{ duration: 2, repeat: Infinity, repeatDelay: 0.5, ease: 'linear' }}
+                    />
+                  </svg>
+                </div>
+
+                {/* Corner decorations */}
+                <div className="absolute top-3 left-3 w-4 h-4 border-t border-l" style={{ borderColor: 'rgba(0,212,255,0.4)' }} />
+                <div className="absolute top-3 right-3 w-4 h-4 border-t border-r" style={{ borderColor: 'rgba(0,212,255,0.4)' }} />
+                <div className="absolute bottom-3 left-3 w-4 h-4 border-b border-l" style={{ borderColor: 'rgba(0,212,255,0.4)' }} />
+                <div className="absolute bottom-3 right-3 w-4 h-4 border-b border-r" style={{ borderColor: 'rgba(0,212,255,0.4)' }} />
+              </div>
             </motion.div>
-          </motion.div>
+
+          </div>
         </div>
       </div>
 
-      <div className="py-14">
+      {/* ========== FEATURES ========== */}
+      <div className="py-20" style={{ background: 'linear-gradient(180deg, transparent, rgba(0,212,255,0.03), transparent)' }}>
         <Section
           id="features"
-          eyebrow="Key highlights"
+          eyebrow="Key Highlights"
           title="Everything you need in one care ecosystem"
           subtitle="Appointments, clinical insights, risk prediction, and secure communication—designed to stay calm and reliable in real clinical environments."
         >
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-5">
-            {[
-              {
-                title: 'Real-time patient–doctor communication',
-                desc: 'Secure chat and consultation-ready messaging to keep care teams aligned.',
-              },
-              {
-                title: 'AI-powered health risk prediction',
-                desc: 'Risk insights from reports and health data to support earlier intervention.',
-              },
-              {
-                title: 'Secure clinical decision support',
-                desc: 'Summaries, alerts, and trends presented with clarity—not noise.',
-              },
-              {
-                title: 'Smart appointment & consultation workflows',
-                desc: 'Booking, queue visibility, and guided steps for patients and clinicians.',
-              },
-              {
-                title: 'Live vitals & health trend monitoring',
-                desc: 'Vitals charts and history tracking for better follow-ups and continuity of care.',
-              },
-            ].map((f, idx) => (
-              <motion.div
-                key={f.title}
-                initial={{ opacity: 0, y: 18 }}
-                whileInView={{ opacity: 1, y: 0 }}
-                viewport={{ once: true, amount: 0.25 }}
-                transition={{ duration: 0.55, delay: idx * 0.08 }}
-                whileHover={reduceMotion ? undefined : { y: -8 }}
-                className="group relative rounded-3xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur p-6 shadow-sm overflow-hidden"
-              >
-                <div className="pointer-events-none absolute -inset-20 opacity-0 group-hover:opacity-100 transition-opacity duration-500">
-                  <div className="absolute inset-0 bg-gradient-to-tr from-primary-600/10 via-secondary-500/5 to-indigo-500/10 blur-2xl" />
-                </div>
-
-                <div className="flex items-start justify-between gap-4">
-                  <div>
-                    <div className="text-sm font-extrabold text-slate-900 dark:text-white">{f.title}</div>
-                    <div className="mt-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{f.desc}</div>
-                  </div>
-                  <div className="shrink-0 h-10 w-10 rounded-2xl bg-secondary-50/70 dark:bg-secondary-900/25 border border-secondary-200/60 dark:border-secondary-900/40 flex items-center justify-center text-secondary-700 dark:text-secondary-300 font-extrabold">
-                    {idx + 1}
-                  </div>
-                </div>
-
-                <div className="mt-5">
-                  <MiniChart compact />
-                </div>
-              </motion.div>
+            {features.map((f, i) => (
+              <FeatureCard key={f.title} title={f.title} desc={f.desc} index={i} icon={f.icon} />
             ))}
           </div>
         </Section>
       </div>
 
-      <div className="py-14">
+      {/* ========== WORKFLOW ========== */}
+      <div className="py-20">
         <Section
           id="workflow"
-          eyebrow="How it works"
+          eyebrow="How It Works"
           title="Simple workflows for patients, doctors, and admins"
           subtitle="A clear role-based experience keeps care delivery organized end-to-end."
         >
-          <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6 relative">
+            {/* Connecting line */}
+            <div className="hidden lg:block absolute top-8 left-1/6 right-1/6 h-px" style={{ background: 'linear-gradient(90deg, transparent, rgba(0,212,255,0.3), transparent)' }} />
+
             {[
-              {
-                title: 'Patients',
-                items: ['Upload reports or enter health data', 'Get AI risk insights', 'Book consultation and communicate with doctors'],
-              },
-              {
-                title: 'Doctors',
-                items: ['View patient history and trends', 'Access clinical alerts and summaries', 'Conduct secure consultations'],
-              },
-              {
-                title: 'Admins',
-                items: ['Doctor verification', 'Platform monitoring', 'System analytics'],
-              },
+              { title: 'Patients', emoji: '🏥', color: '#00D4FF', step: '01', items: ['Upload reports or enter health data', 'Get AI risk insights', 'Book consultation and communicate with doctors'] },
+              { title: 'Doctors', emoji: '🩺', color: '#00FFB3', step: '02', items: ['View patient history and trends', 'Access clinical alerts and summaries', 'Conduct secure consultations'] },
+              { title: 'Admins', emoji: '🛡️', color: '#FF006E', step: '03', items: ['Doctor verification', 'Platform monitoring', 'System analytics'] },
             ].map((col, i) => (
               <motion.div
                 key={col.title}
-                whileHover={reduceMotion ? undefined : { y: -6 }}
-                className="rounded-3xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur p-6 shadow-sm"
+                initial={{ opacity: 0, y: 20 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true, amount: 0.3 }}
+                transition={{ duration: 0.5, delay: i * 0.12 }}
+                whileHover={useReducedMotion() ? undefined : { y: -6 }}
+                className="relative rounded-2xl p-6 overflow-hidden"
+                style={{
+                  background: 'rgba(5,10,20,0.6)',
+                  border: `1px solid ${col.color}20`,
+                  backdropFilter: 'blur(16px)',
+                }}
               >
-                <div className="flex items-center justify-between">
-                  <div className="text-base font-extrabold text-slate-900 dark:text-white">{col.title}</div>
-                  <div className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">Step {i + 1}</div>
+                <div className="absolute top-4 right-4 text-4xl font-bold opacity-[0.07]" style={{ fontFamily: "'Space Grotesk', sans-serif", color: col.color }}>
+                  {col.step}
                 </div>
-                <div className="mt-4 space-y-3">
-                  {col.items.map((it) => (
-                    <motion.div
-                      key={it}
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-4" style={{ background: `${col.color}15`, border: `1px solid ${col.color}30` }}>
+                  {col.emoji}
+                </div>
+                <h3 className="text-base font-bold text-white mb-4" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{col.title}</h3>
+                <div className="space-y-3">
+                  {col.items.map(it => (
+                    <motion.div key={it} className="flex items-start gap-3"
                       initial={{ opacity: 0, x: -8 }}
                       whileInView={{ opacity: 1, x: 0 }}
-                      viewport={{ once: true, amount: 0.4 }}
-                      transition={{ duration: 0.35 }}
-                      className="flex items-start gap-3"
+                      viewport={{ once: true }}
+                      transition={{ duration: 0.3 }}
                     >
-                      <div className="mt-1 h-2.5 w-2.5 rounded-full bg-secondary-500/80" />
-                      <div className="text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{it}</div>
+                      <div className="mt-1.5 h-1.5 w-1.5 rounded-full flex-shrink-0" style={{ background: col.color, boxShadow: `0 0 6px ${col.color}` }} />
+                      <div className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.55)' }}>{it}</div>
                     </motion.div>
                   ))}
                 </div>
@@ -467,96 +449,107 @@ export const LandingPage: React.FC<LandingPageProps> = ({ onSignIn }) => {
         </Section>
       </div>
 
-      <div className="py-14">
+      {/* ========== TRUST ========== */}
+      <div className="py-20" style={{ background: 'linear-gradient(180deg, transparent, rgba(0,255,179,0.02), transparent)' }}>
         <Section
           id="trust"
-          eyebrow="Trust"
+          eyebrow="Trust & Security"
           title="Security and privacy designed for clinical environments"
-          subtitle="Secure medical-grade data protection, role-based access control, and privacy-first healthcare workflows designed for reliable clinical environments."
+          subtitle="Secure medical-grade data protection, role-based access control, and privacy-first healthcare workflows."
         >
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {[
-              {
-                title: 'Medical-grade protection',
-                desc: 'Secure handling of sensitive data with strong defaults and consistent safeguards.',
-              },
-              {
-                title: 'Role-based access control',
-                desc: 'Clear separation of patient, doctor, and admin capabilities to reduce risk.',
-              },
-              {
-                title: 'Privacy-first workflows',
-                desc: 'Designed around consent, least-privilege access, and predictable clinical UX.',
-              },
-              {
-                title: 'Auditability & oversight',
-                desc: 'Admin visibility for verification, monitoring, and system health analytics.',
-              },
+              { icon: '🛡️', title: 'Medical-grade protection', desc: 'Secure handling of sensitive data with strong defaults and consistent safeguards.', color: '#00D4FF' },
+              { icon: '🔐', title: 'Role-based access control', desc: 'Clear separation of patient, doctor, and admin capabilities to reduce risk.', color: '#00FFB3' },
+              { icon: '🔏', title: 'Privacy-first workflows', desc: 'Designed around consent, least-privilege access, and predictable clinical UX.', color: '#00D4FF' },
+              { icon: '📋', title: 'Auditability & oversight', desc: 'Admin visibility for verification, monitoring, and system health analytics.', color: '#00FFB3' },
             ].map((t, idx) => (
               <motion.div
                 key={t.title}
                 initial={{ opacity: 0, y: 14 }}
                 whileInView={{ opacity: 1, y: 0 }}
                 viewport={{ once: true, amount: 0.25 }}
-                transition={{ duration: 0.5, delay: idx * 0.06 }}
-                whileHover={reduceMotion ? undefined : { y: -6 }}
-                className="rounded-3xl border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur p-6 shadow-sm"
+                transition={{ duration: 0.5, delay: idx * 0.08 }}
+                whileHover={{ y: -6 }}
+                className="rounded-2xl p-6"
+                style={{ background: 'rgba(5,10,20,0.6)', border: `1px solid ${t.color}15`, backdropFilter: 'blur(16px)' }}
               >
-                <div className="text-sm font-extrabold text-slate-900 dark:text-white">{t.title}</div>
-                <div className="mt-2 text-sm text-slate-600 dark:text-slate-300 leading-relaxed">{t.desc}</div>
+                <div className="flex items-start gap-4">
+                  <div className="w-11 h-11 flex-shrink-0 rounded-xl flex items-center justify-center text-xl" style={{ background: `${t.color}10`, border: `1px solid ${t.color}25` }}>
+                    {t.icon}
+                  </div>
+                  <div>
+                    <h3 className="text-sm font-bold text-white mb-1.5" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{t.title}</h3>
+                    <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>{t.desc}</p>
+                  </div>
+                </div>
               </motion.div>
             ))}
           </div>
         </Section>
       </div>
 
-      {/* CTA */}
-      <div id="cta" className="relative z-10 pb-20 pt-6">
+      {/* ========== CTA ========== */}
+      <div id="cta" className="relative py-24">
         <div className="mx-auto max-w-7xl px-6 md:px-10">
-          <div className="rounded-[28px] border border-slate-200/70 dark:border-slate-800 bg-white/70 dark:bg-slate-900/60 backdrop-blur p-8 md:p-10 shadow-sm overflow-hidden relative">
-            <div className="absolute -inset-24 bg-gradient-to-tr from-primary-600/15 via-secondary-500/10 to-indigo-500/15 blur-2xl" />
-            <div className="relative">
-              <div className="grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
-                <div>
-                  <div className="text-[10px] font-extrabold uppercase tracking-[0.18em] text-slate-400 dark:text-slate-500">CTA</div>
-                  <div className="mt-3 text-3xl md:text-4xl font-extrabold tracking-tight text-slate-900 dark:text-white">
-                    Start your AI-driven healthcare journey today
-                  </div>
-                  <div className="mt-3 text-base text-slate-600 dark:text-slate-300 leading-relaxed max-w-xl">
-                    Create a secure account to upload reports, get AI risk insights, and connect with clinicians in a privacy-first workflow.
-                  </div>
-                </div>
+          <div
+            className="relative rounded-[32px] p-10 md:p-14 overflow-hidden"
+            style={{
+              background: 'linear-gradient(135deg, rgba(0,212,255,0.1) 0%, rgba(0,255,179,0.05) 50%, rgba(5,10,20,0.9) 100%)',
+              border: '1px solid rgba(0,212,255,0.2)',
+              backdropFilter: 'blur(20px)',
+              boxShadow: '0 0 60px rgba(0,212,255,0.1), 0 40px 80px rgba(0,0,0,0.3)',
+            }}
+          >
+            {/* Ambient glow */}
+            <div className="absolute -top-24 -left-24 w-64 h-64 rounded-full blur-[80px] pointer-events-none" style={{ background: 'rgba(0,212,255,0.12)' }} />
+            <div className="absolute -bottom-24 -right-24 w-64 h-64 rounded-full blur-[80px] pointer-events-none" style={{ background: 'rgba(0,255,179,0.08)' }} />
 
-                <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 lg:justify-end">
-                  <Button variant="outline" size="lg" className="rounded-2xl" onClick={onSignIn}>
-                    Upload Health Report
-                  </Button>
-                  <motion.button
-                    onClick={onSignIn}
-                    whileHover={reduceMotion ? undefined : { y: -2 }}
-                    whileTap={reduceMotion ? undefined : { scale: 0.98 }}
-                    className="relative overflow-hidden rounded-2xl bg-gradient-to-r from-primary-600 to-secondary-500 px-7 py-4 text-white font-extrabold shadow-xl shadow-primary-500/25"
-                  >
-                    {!reduceMotion && (
-                      <motion.span
-                        aria-hidden
-                        className="absolute -left-1/3 top-0 h-full w-1/3 bg-white/20 skew-x-[-18deg]"
-                        animate={{ x: ['-40%', '220%'] }}
-                        transition={{ duration: 1.6, repeat: Infinity, repeatDelay: 2.2, ease: 'easeInOut' }}
-                      />
-                    )}
-                    <span className="relative z-10">Get Started</span>
-                  </motion.button>
+            {/* Corner accents */}
+            <div className="absolute top-5 left-5 w-6 h-6 border-t-2 border-l-2" style={{ borderColor: 'rgba(0,212,255,0.4)' }} />
+            <div className="absolute top-5 right-5 w-6 h-6 border-t-2 border-r-2" style={{ borderColor: 'rgba(0,212,255,0.4)' }} />
+            <div className="absolute bottom-5 left-5 w-6 h-6 border-b-2 border-l-2" style={{ borderColor: 'rgba(0,212,255,0.4)' }} />
+            <div className="absolute bottom-5 right-5 w-6 h-6 border-b-2 border-r-2" style={{ borderColor: 'rgba(0,212,255,0.4)' }} />
+
+            <div className="relative grid grid-cols-1 lg:grid-cols-2 gap-8 items-center">
+              <div>
+                <div className="text-[10px] font-extrabold uppercase tracking-[0.18em] mb-4" style={{ color: 'rgba(0,212,255,0.6)' }}>
+                  Start Today
                 </div>
+                <h2 className="text-3xl md:text-4xl font-bold text-white mb-4" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>
+                  Start your AI-driven healthcare journey today
+                </h2>
+                <p className="text-base leading-relaxed max-w-lg" style={{ color: 'rgba(255,255,255,0.55)' }}>
+                  Create a secure account to upload reports, get AI risk insights, and connect with clinicians in a privacy-first workflow.
+                </p>
               </div>
 
-              <div className="mt-8 text-[11px] text-slate-500 dark:text-slate-400 leading-relaxed">
-                By continuing, you agree to the platform terms. CareXAI provides decision support and does not replace professional medical diagnosis.
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 lg:justify-end">
+                <Button variant="cyber" size="lg" className="rounded-2xl" onClick={onSignIn}>
+                  Upload Health Report
+                </Button>
+                <motion.button
+                  onClick={onSignIn}
+                  whileHover={reduceMotion ? undefined : { y: -3, scale: 1.03 }}
+                  whileTap={reduceMotion ? undefined : { scale: 0.97 }}
+                  className="relative overflow-hidden rounded-2xl px-8 py-4 text-base font-bold shimmer-btn"
+                  style={{
+                    background: 'linear-gradient(135deg, #00D4FF 0%, #00FFB3 100%)',
+                    color: '#050A14',
+                    boxShadow: '0 0 30px rgba(0,212,255,0.5)',
+                  }}
+                >
+                  <span className="relative z-10">Get Started</span>
+                </motion.button>
               </div>
+            </div>
+
+            <div className="relative mt-8 text-xs" style={{ color: 'rgba(255,255,255,0.3)' }}>
+              By continuing, you agree to the platform terms. CareXAI provides decision support and does not replace professional medical diagnosis.
             </div>
           </div>
 
-          <div className="mt-10 text-center text-xs text-slate-400 dark:text-slate-500">
+          <div className="mt-10 text-center text-xs" style={{ color: 'rgba(255,255,255,0.2)' }}>
             © 2026 CareXAI — Built for clear, trustworthy care.
           </div>
         </div>

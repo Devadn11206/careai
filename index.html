@@ -7,7 +7,8 @@
   <title>CareXAI - Healthcare Intelligence</title>
   <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   <link rel="manifest" href="/manifest.webmanifest" />
-  <meta name="theme-color" content="#2563EB" />
+  <meta name="theme-color" content="#00D4FF" />
+  <meta name="description" content="CareXAI — AI-powered telehealth platform combining appointments, clinical insights, risk prediction, and secure doctor–patient communication." />
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <meta name="apple-mobile-web-app-title" content="CareXAI" />
@@ -21,8 +22,62 @@
         extend: {
           fontFamily: {
             sans: ['Inter', 'sans-serif'],
+            display: ['Space Grotesk', 'Inter', 'sans-serif'],
           },
           colors: {
+            // Deep space backgrounds
+            space: {
+              50: '#e8f4ff',
+              100: '#c3deff',
+              200: '#8fc2ff',
+              300: '#4d9fff',
+              400: '#1a80ff',
+              500: '#0060e6',
+              600: '#004ab8',
+              700: '#003389',
+              800: '#001e5c',
+              900: '#000d30',
+              950: '#050A14',
+            },
+            // Electric cyan (primary neon)
+            neon: {
+              50: '#e0fbff',
+              100: '#b3f5ff',
+              200: '#7aeeff',
+              300: '#3de5ff',
+              400: '#00D4FF',
+              500: '#00b8e0',
+              600: '#0094b8',
+              700: '#007090',
+              800: '#004d66',
+              900: '#002a40',
+            },
+            // Bioluminescent teal-green (secondary)
+            bio: {
+              50: '#e0fff5',
+              100: '#b3ffe6',
+              200: '#7affd4',
+              300: '#3dffc0',
+              400: '#00FFB3',
+              500: '#00d994',
+              600: '#00b375',
+              700: '#008d58',
+              800: '#00663d',
+              900: '#004024',
+            },
+            // Pulse pink/magenta (alerts)
+            pulse: {
+              50: '#ffe0ee',
+              100: '#ffb3d3',
+              200: '#ff7ab4',
+              300: '#ff3d94',
+              400: '#FF006E',
+              500: '#d9005e',
+              600: '#b3004d',
+              700: '#8d003c',
+              800: '#66002b',
+              900: '#40001a',
+            },
             // Blue primary (trustworthy medical)
             primary: {
               50: '#eff6ff',
@@ -31,7 +86,7 @@
               300: '#93c5fd',
               400: '#60a5fa',
               500: '#3b82f6',
-              600: '#2563eb', // Main Brand Color
+              600: '#2563eb',
               700: '#1d4ed8',
               800: '#1e40af',
               900: '#1e3a8a',
@@ -51,7 +106,7 @@
             },
             // Neutral Slate for text and backgrounds
             slate: {
-              50: '#F8FAFC', // App background
+              50: '#F8FAFC',
               100: '#f3f4f6',
               200: '#e5e7eb',
               300: '#d1d5db',
@@ -72,26 +127,132 @@
       }
     }
   </script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <style>
     body {
       font-family: 'Inter', sans-serif;
     }
 
-    /* Motion helpers (lightweight, global) */
+    h1, h2, h3, .font-display {
+      font-family: 'Space Grotesk', 'Inter', sans-serif;
+    }
+
+    /* ============================================
+       NEON PULSE ANIMATIONS
+    ============================================ */
+    @keyframes neon-pulse {
+      0%, 100% {
+        box-shadow: 0 0 5px rgba(0, 212, 255, 0.4), 0 0 20px rgba(0, 212, 255, 0.2), 0 0 40px rgba(0, 212, 255, 0.1);
+      }
+      50% {
+        box-shadow: 0 0 10px rgba(0, 212, 255, 0.8), 0 0 30px rgba(0, 212, 255, 0.5), 0 0 60px rgba(0, 212, 255, 0.3);
+      }
+    }
+
+    @keyframes neon-pulse-green {
+      0%, 100% {
+        box-shadow: 0 0 5px rgba(0, 255, 179, 0.4), 0 0 20px rgba(0, 255, 179, 0.2);
+      }
+      50% {
+        box-shadow: 0 0 10px rgba(0, 255, 179, 0.8), 0 0 30px rgba(0, 255, 179, 0.5), 0 0 60px rgba(0, 255, 179, 0.3);
+      }
+    }
+
+    @keyframes neon-text-pulse {
+      0%, 100% { text-shadow: 0 0 8px rgba(0, 212, 255, 0.8), 0 0 20px rgba(0, 212, 255, 0.5); }
+      50% { text-shadow: 0 0 16px rgba(0, 212, 255, 1), 0 0 40px rgba(0, 212, 255, 0.8), 0 0 80px rgba(0, 212, 255, 0.4); }
+    }
+
+    /* ============================================
+       SHIMMER SWEEP
+    ============================================ */
+    @keyframes shimmer-sweep {
+      0% { transform: translateX(-100%) skewX(-15deg); }
+      100% { transform: translateX(300%) skewX(-15deg); }
+    }
+
+    .shimmer-btn::after {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
+      transform: translateX(-100%) skewX(-15deg);
+      animation: shimmer-sweep 2.5s ease-in-out infinite;
+      animation-delay: 1s;
+      pointer-events: none;
+    }
+
+    /* ============================================
+       GRID DOT PATTERN BACKGROUND
+    ============================================ */
+    .grid-dot-bg {
+      background-image: radial-gradient(circle, rgba(0, 212, 255, 0.12) 1px, transparent 1px);
+      background-size: 32px 32px;
+    }
+
+    @keyframes grid-pulse {
+      0%, 100% { opacity: 0.3; }
+      50% { opacity: 0.6; }
+    }
+
+    .grid-dot-bg-animated {
+      background-image: radial-gradient(circle, rgba(0, 212, 255, 0.15) 1px, transparent 1px);
+      background-size: 32px 32px;
+      animation: grid-pulse 4s ease-in-out infinite;
+    }
+
+    /* ============================================
+       DATA STREAM / ECG
+    ============================================ */
+    @keyframes ecg-flash {
+      0%, 90%, 100% { opacity: 1; }
+      95% { opacity: 0.3; }
+    }
+
+    /* ============================================
+       PARTICLE FLOAT
+    ============================================ */
+    @keyframes particle-float {
+      0%, 100% { transform: translateY(0px) translateX(0px) scale(1); opacity: 0.4; }
+      25% { transform: translateY(-20px) translateX(10px) scale(1.1); opacity: 0.7; }
+      50% { transform: translateY(-10px) translateX(-15px) scale(0.9); opacity: 0.5; }
+      75% { transform: translateY(-30px) translateX(5px) scale(1.05); opacity: 0.6; }
+    }
+
+    /* ============================================
+       ORBITAL RING ROTATION
+    ============================================ */
+    @keyframes orbit-slow {
+      from { transform: rotateX(70deg) rotateZ(0deg); }
+      to { transform: rotateX(70deg) rotateZ(360deg); }
+    }
+
+    @keyframes orbit-reverse {
+      from { transform: rotateX(60deg) rotateZ(360deg); }
+      to { transform: rotateX(60deg) rotateZ(0deg); }
+    }
+
+    @keyframes orbit-tilt {
+      from { transform: rotateX(50deg) rotateY(20deg) rotateZ(0deg); }
+      to { transform: rotateX(50deg) rotateY(20deg) rotateZ(360deg); }
+    }
+
+    /* ============================================
+       SCAN LINE
+    ============================================ */
+    @keyframes scan-line {
+      0% { top: 0%; opacity: 1; }
+      100% { top: 100%; opacity: 0; }
+    }
+
+    /* ============================================
+       LEGACY BLOB ANIMATIONS (preserved)
+    ============================================ */
     @keyframes cxai-blob {
-      0% {
-        transform: translate3d(0, 0, 0) scale(1);
-      }
-      33% {
-        transform: translate3d(18px, -22px, 0) scale(1.06);
-      }
-      66% {
-        transform: translate3d(-14px, 16px, 0) scale(0.98);
-      }
-      100% {
-        transform: translate3d(0, 0, 0) scale(1);
-      }
+      0% { transform: translate3d(0, 0, 0) scale(1); }
+      33% { transform: translate3d(18px, -22px, 0) scale(1.06); }
+      66% { transform: translate3d(-14px, 16px, 0) scale(0.98); }
+      100% { transform: translate3d(0, 0, 0) scale(1); }
     }
 
     .animate-blob {
@@ -99,26 +260,16 @@
       will-change: transform;
     }
 
-    .animation-delay-2000 {
-      animation-delay: 2s;
-    }
-
-    .animation-delay-4000 {
-      animation-delay: 4s;
-    }
+    .animation-delay-2000 { animation-delay: 2s; }
+    .animation-delay-4000 { animation-delay: 4s; }
 
     @keyframes cxai-gradient {
-      0% {
-        background-position: 0% 50%;
-      }
-      50% {
-        background-position: 100% 50%;
-      }
-      100% {
-        background-position: 0% 50%;
-      }
+      0% { background-position: 0% 50%; }
+      50% { background-position: 100% 50%; }
+      100% { background-position: 0% 50%; }
     }
 
+    /* Light mode gradient (legacy) */
     .cxai-gradient-motion {
       background: radial-gradient(1200px 700px at 10% 0%, rgba(37, 99, 235, 0.16), transparent 60%),
         radial-gradient(1000px 600px at 90% 10%, rgba(20, 184, 166, 0.12), transparent 60%),
@@ -129,85 +280,126 @@
       will-change: background-position;
     }
 
-    /* Global Dark Mode Transitions */
-    body,
-    div,
-    nav,
-    button,
-    input,
-    select,
-    textarea,
-    span,
-    p,
-    h1,
-    h2,
-    h3,
-    h4,
-    h5,
-    h6 {
+    /* Dark mode gradient (deep space) */
+    .dark .cxai-gradient-motion {
+      background: radial-gradient(1200px 700px at 10% 0%, rgba(0, 212, 255, 0.08), transparent 60%),
+        radial-gradient(1000px 600px at 90% 10%, rgba(0, 255, 179, 0.05), transparent 60%),
+        radial-gradient(1000px 600px at 50% 100%, rgba(255, 0, 110, 0.05), transparent 60%),
+        linear-gradient(120deg, rgba(5, 10, 20, 1), rgba(0, 20, 40, 0.9), rgba(5, 10, 20, 1));
+      background-size: 200% 200%;
+    }
+
+    /* ============================================
+       GLASS CARD UTILITY
+    ============================================ */
+    .glass-card {
+      background: rgba(255, 255, 255, 0.7);
+      border: 1px solid rgba(255, 255, 255, 0.5);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    .dark .glass-card {
+      background: rgba(0, 212, 255, 0.03);
+      border: 1px solid rgba(0, 212, 255, 0.12);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+    }
+
+    .glass-card-dark {
+      background: rgba(5, 10, 20, 0.75);
+      border: 1px solid rgba(0, 212, 255, 0.15);
+      backdrop-filter: blur(24px);
+      -webkit-backdrop-filter: blur(24px);
+    }
+
+    /* ============================================
+       NEON TEXT UTILITIES
+    ============================================ */
+    .neon-text-cyan {
+      color: #00D4FF;
+      text-shadow: 0 0 10px rgba(0, 212, 255, 0.8), 0 0 30px rgba(0, 212, 255, 0.4);
+    }
+
+    .neon-text-green {
+      color: #00FFB3;
+      text-shadow: 0 0 10px rgba(0, 255, 179, 0.8), 0 0 30px rgba(0, 255, 179, 0.4);
+    }
+
+    .neon-glow-cyan {
+      animation: neon-pulse 2.5s ease-in-out infinite;
+    }
+
+    .neon-glow-green {
+      animation: neon-pulse-green 2.5s ease-in-out infinite;
+    }
+
+    /* ============================================
+       PROGRESS BAR ANIMATION
+    ============================================ */
+    @keyframes progress-fill {
+      from { width: 0%; }
+      to { width: 100%; }
+    }
+
+    .progress-auto {
+      animation: progress-fill 3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+    }
+
+    /* ============================================
+       DARK MODE TRANSITIONS
+    ============================================ */
+    body, div, nav, button, input, select, textarea, span, p, h1, h2, h3, h4, h5, h6 {
       transition-property: background-color, border-color, color, fill, stroke;
       transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
       transition-duration: 300ms;
     }
 
-    /* Custom Scrollbar */
-    ::-webkit-scrollbar {
-      width: 6px;
-      height: 6px;
-    }
-
-    ::-webkit-scrollbar-track {
-      background: transparent;
-    }
-
+    /* ============================================
+       CUSTOM SCROLLBAR (NEON)
+    ============================================ */
+    ::-webkit-scrollbar { width: 6px; height: 6px; }
+    ::-webkit-scrollbar-track { background: transparent; }
     ::-webkit-scrollbar-thumb {
-      background: #2563EB;
+      background: rgba(37, 99, 235, 0.5);
       border-radius: 3px;
-      opacity: 0.5;
     }
-
+    ::-webkit-scrollbar-thumb:hover {
+      background: rgba(37, 99, 235, 0.9);
+    }
     .dark ::-webkit-scrollbar-thumb {
-      background: #14B8A6;
+      background: rgba(0, 212, 255, 0.4);
+    }
+    .dark ::-webkit-scrollbar-thumb:hover {
+      background: rgba(0, 212, 255, 0.8);
     }
 
+    /* ============================================
+       PRINT STYLES (preserved)
+    ============================================ */
     @media print {
-      @page {
-        size: A4;
-        margin: 10mm;
-      }
-
+      @page { size: A4; margin: 10mm; }
       body {
         -webkit-print-color-adjust: exact;
         print-color-adjust: exact;
         background: white;
       }
-
-      body * {
-        visibility: hidden;
-      }
-
-      .print-passport,
-      .print-passport * {
-        visibility: visible;
-      }
-
+      body * { visibility: hidden; }
+      .print-passport, .print-passport * { visibility: visible; }
       .print-passport {
-        position: absolute;
-        left: 0;
-        top: 0;
-        width: 100%;
-        margin: 0;
-        padding: 0;
-        background: white;
+        position: absolute; left: 0; top: 0;
+        width: 100%; margin: 0; padding: 0; background: white;
       }
+      .print-hidden { display: none !important; }
+      .recharts-wrapper { break-inside: avoid; }
+    }
 
-      .print-hidden {
-        display: none !important;
-      }
-
-      .recharts-wrapper {
-        break-inside: avoid;
-      }
+    /* custom scrollbar class */
+    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
+    .custom-scrollbar::-webkit-scrollbar-thumb {
+      background: rgba(0, 212, 255, 0.3);
+      border-radius: 2px;
     }
   </style>
   <script type="importmap">
@@ -225,7 +417,7 @@
 </head>
 
 <body
-  class="bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100 antialiased selection:bg-primary-100 selection:text-primary-900">
+  class="bg-slate-50 text-slate-900 dark:bg-space-950 dark:text-slate-100 antialiased selection:bg-neon-400/20 selection:text-neon-400">
   <div id="root"></div>
   <script type="module" src="./index.tsx"></script>
 </body>

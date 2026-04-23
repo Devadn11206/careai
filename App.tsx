@@ -20,6 +20,19 @@ function App() {
   const [user, setUser] = useState<User | null>(null);
   const [bootstrapped, setBootstrapped] = useState(false);
 
+  // Bootstrap dark mode — default to dark if no preference stored
+  useEffect(() => {
+    const storedTheme = localStorage.getItem('theme');
+    if (!storedTheme) {
+      document.documentElement.classList.add('dark');
+      localStorage.setItem('theme', 'dark');
+    } else if (storedTheme === 'dark') {
+      document.documentElement.classList.add('dark');
+    } else {
+      document.documentElement.classList.remove('dark');
+    }
+  }, []);
+
   // Initialize Background Simulation Engine
   useEffect(() => {
     const intervalId = setInterval(() => {

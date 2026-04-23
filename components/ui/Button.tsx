@@ -2,22 +2,22 @@
 import React from 'react';
 
 interface ButtonProps extends React.ButtonHTMLAttributes<HTMLButtonElement> {
-  variant?: 'primary' | 'secondary' | 'danger' | 'outline' | 'ghost';
+  variant?: 'primary' | 'secondary' | 'danger' | 'outline' | 'ghost' | 'neon' | 'cyber';
   size?: 'sm' | 'md' | 'lg';
   isLoading?: boolean;
 }
 
-export const Button: React.FC<ButtonProps> = ({ 
-  children, 
-  variant = 'primary', 
+export const Button: React.FC<ButtonProps> = ({
+  children,
+  variant = 'primary',
   size = 'md',
-  isLoading, 
-  className = '', 
+  isLoading,
+  className = '',
   disabled,
-  ...props 
+  ...props
 }) => {
   const baseStyle = "relative overflow-hidden rounded-xl font-semibold transition-all duration-300 flex items-center justify-center disabled:opacity-50 disabled:cursor-not-allowed tracking-wide active:scale-[0.97] focus:outline-none focus:ring-2 focus:ring-offset-2";
-  
+
   const sizes = {
     sm: "px-3 py-1.5 text-xs",
     md: "px-5 py-2.5 text-sm",
@@ -26,18 +26,24 @@ export const Button: React.FC<ButtonProps> = ({
 
   const variants = {
     primary: "bg-gradient-to-r from-primary-600 to-secondary-500 hover:from-primary-700 hover:to-secondary-600 text-white shadow-lg shadow-primary-500/25 hover:shadow-primary-500/35 border border-transparent focus:ring-primary-500",
-    
+
     secondary: "bg-slate-800 text-white hover:bg-slate-900 dark:bg-slate-700 dark:hover:bg-slate-600 shadow-md hover:shadow-lg border border-transparent focus:ring-slate-500",
-    
+
     danger: "bg-gradient-to-r from-red-500 to-red-600 hover:from-red-600 hover:to-red-700 text-white shadow-lg shadow-red-500/30 border border-transparent focus:ring-red-500",
-    
-    outline: "bg-white dark:bg-transparent border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-primary-500 dark:hover:border-primary-500 hover:text-primary-700 dark:hover:text-primary-300 hover:bg-primary-50 dark:hover:bg-primary-900/10 focus:ring-slate-200",
-    
-    ghost: "bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200 focus:ring-slate-200"
+
+    outline: "bg-white dark:bg-transparent border-2 border-slate-200 dark:border-slate-700 text-slate-600 dark:text-slate-300 hover:border-primary-500 dark:hover:border-neon-400 hover:text-primary-700 dark:hover:text-neon-400 hover:bg-primary-50 dark:hover:bg-neon-400/5 focus:ring-slate-200",
+
+    ghost: "bg-transparent text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 hover:text-slate-900 dark:hover:text-slate-200 focus:ring-slate-200",
+
+    // Neon variant — electric cyan gradient with glow
+    neon: "bg-gradient-to-r from-neon-400 to-bio-400 text-space-950 font-bold shadow-lg shadow-neon-400/30 hover:shadow-neon-400/50 border border-transparent focus:ring-neon-400 shimmer-btn",
+
+    // Cyber variant — transparent with animated neon border
+    cyber: "bg-transparent border border-neon-400/50 text-neon-400 hover:bg-neon-400/10 hover:border-neon-400 hover:shadow-neon-400/20 hover:shadow-lg focus:ring-neon-400",
   };
 
   return (
-    <button 
+    <button
       className={`${baseStyle} ${sizes[size]} ${variants[variant]} ${className}`}
       disabled={isLoading || disabled}
       {...props}
