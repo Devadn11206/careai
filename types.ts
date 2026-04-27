@@ -16,7 +16,7 @@ export interface User {
   name: string;
   email: string;
   role: UserRole;
-  avatarUrl?: string;
+  profilePicUrl?: string;
   isBlocked?: boolean; // New field for admin control
 }
 
@@ -469,4 +469,10 @@ export interface AdminStats {
   totalAppointments: number;
   systemHealth: 'Healthy' | 'Degraded' | 'Maintenance';
   storageUsage: string; // "45%"
+}
+
+export interface ClientAction {
+  type: string;
+  target?: string;
+  payload?: any;
 }

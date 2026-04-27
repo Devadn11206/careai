@@ -49,6 +49,7 @@ model User {
   email        String   @unique
   passwordHash String
   role         UserRole
+  profilePicUrl String?
 
   // Optional doctor-specific metadata (used when role == DOCTOR)
   specialization     String?

@@ -12,12 +12,15 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { HealthPassport } from '../components/HealthPassport';
 import { BarChart, Bar, Cell, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, PieChart, Pie, Brush, ReferenceLine } from 'recharts';
 import { ChatPanel } from '../components/telechat/ChatPanel';
+import { AutomationAssistant } from '../components/AutomationAssistant';
+
 
 const LazyVideoCall = lazy(() => import('../components/VideoCall').then((module) => ({ default: module.VideoCall })));
 const prefetchVideoCall = () => { void import('../components/VideoCall'); };
 
 interface Props {
     user: DoctorProfile;
+    onProfileUpdate?: (user: DoctorProfile) => void;
 }
 
 type ViewMode = 'dashboard' | 'patients' | 'schedule' | 'settings' | 'analytics';
@@ -172,7 +175,7 @@ const getDefaultSchedule = (): DaySchedule[] => [
     { day: 'Sun', available: false, startTime: '10:00', endTime: '14:00' },
 ];
 
-export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
+export const DoctorDashboard: React.FC<Props> = ({ user: initialUser, onProfileUpdate }) => {
     const emptyAnalytics: DoctorAnalytics = {
         totalPatients: 0,
         appointmentsToday: 0,
@@ -188,6 +191,7 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
     const [patients, setPatients] = useState<PatientProfile[]>([]);
     const [appointments, setAppointments] = useState<Appointment[]>([]);
     const [analytics, setAnalytics] = useState<DoctorAnalytics | null>(null);
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
 
     const [viewMode, setViewMode] = useState<ViewMode>('dashboard');
     const [selectedPatient, setSelectedPatient] = useState<PatientProfile | null>(null);
@@ -197,6 +201,37 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
     const [patientHistory, setPatientHistory] = useState<HealthMetrics[]>([]);
     const [patientMeds, setPatientMeds] = useState<Medication[]>([]);
     const [riskUpdateSummary, setRiskUpdateSummary] = useState<string | null>(null);
+
+    const [isProfilePicUploading, setIsProfilePicUploading] = useState(false);
+    const profilePicInputRef = React.useRef<HTMLInputElement>(null);
+
+    const handleProfilePicUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file.');
+            return;
+        }
+
+        setIsProfilePicUploading(true);
+        try {
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+                const base64 = reader.result as string;
+                const updatedUser = await BackendAPI.updateProfilePic(base64);
+                setUser(updatedUser as DoctorProfile);
+                if (onProfileUpdate) onProfileUpdate(updatedUser as DoctorProfile);
+            };
+            reader.readAsDataURL(file);
+        } catch (err) {
+            console.error('Failed to upload profile pic', err);
+            alert('Failed to update profile picture. Please try a smaller image.');
+        } finally {
+            setIsProfilePicUploading(false);
+            if (profilePicInputRef.current) profilePicInputRef.current.value = '';
+        }
+    };
     const [medSafetyAlert, setMedSafetyAlert] = useState<{
         severity: 'LOW' | 'MEDIUM' | 'HIGH';
         summary: string;
@@ -400,7 +435,7 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
     useEffect(() => {
         const handleHashChange = () => {
             const hash = window.location.hash.replace('#', '');
-            const validModes: ViewMode[] = ['dashboard', 'patients', 'schedule', 'analytics'];
+            const validModes: ViewMode[] = ['dashboard', 'patients', 'schedule', 'analytics', 'settings'];
             if (hash && validModes.includes(hash as ViewMode)) {
                 setViewMode(hash as ViewMode);
                 if (hash !== 'patients') setSelectedPatient(null);
@@ -530,6 +565,15 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                 .catch(() => {});
         };
 
+
+        const handleAssistantAction = (action: any) => {
+            handleDoctorAssistantAction(action);
+        };
+
+
+        window.addEventListener('carexai-action', (e: any) => handleAssistantAction(e.detail));
+        window.addEventListener('refresh-dashboard', () => setRefreshTrigger(prev => prev + 1));
+
         const unsubscribeAppt = BackendAPI.onAppointmentCreated((appt) => {
             upsertAppointment(appt);
             hydrateSummaryPreview(appt.patientId);
@@ -571,7 +615,7 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
             unsubscribeEmergency();
             unsubscribeApptUpdated();
         };
-    }, [user.id, user.status, viewMode, manageDate, selectedPatient?.id]);
+    }, [user.id, user.status, viewMode, manageDate, selectedPatient?.id, refreshTrigger]);
 
     useEffect(() => {
         let cancelled = false;
@@ -873,6 +917,79 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
         run();
         return () => { cancelled = true; };
     }, [patientMeds, selectedPatient?.id]);
+
+    // --- AUTOMATION ASSISTANT ACTION HANDLER ---
+
+    const handleDoctorAssistantAction = (action: { type: string; target?: string }) => {
+        switch (action.type) {
+            case 'NAVIGATE':
+                if (action.target === 'dashboard') setViewMode('dashboard');
+                if (action.target === 'patients') setViewMode('patients');
+                if (action.target === 'schedule') setViewMode('schedule');
+                if (action.target === 'analytics') setViewMode('analytics');
+                if (action.target === 'settings') setViewMode('settings');
+                break;
+            case 'OPEN_PATIENTS':
+                setViewMode('patients');
+                setSelectedPatient(null);
+                break;
+            case 'OPEN_SCHEDULE':
+                setViewMode('schedule');
+                break;
+            case 'OPEN_ANALYTICS':
+                setViewMode('analytics');
+                break;
+            case 'OPEN_SETTINGS':
+                setViewMode('settings');
+                break;
+            case 'OPEN_DASHBOARD':
+                setViewMode('dashboard');
+                break;
+            case 'SELECT_PATIENT': {
+                // Try to find patient by name or id
+                const query = (action.target || '').toLowerCase();
+                const found = patients.find(
+                    p => p.name.toLowerCase().includes(query) || p.id === action.target
+                );
+                if (found) {
+                    setViewMode('patients');
+                    setSelectedPatient(found);
+                } else {
+                    setViewMode('patients');
+                }
+                break;
+            }
+            case 'START_VIDEO_CALL': {
+                const appt = appointments.find(a => a.status === 'SCHEDULED' && a.consultationType === 'VIDEO');
+                if (appt) {
+                    setVideoAppointment(appt);
+                    setShowVideoCall(true);
+                }
+                break;
+            }
+            case 'OPEN_TELECHAT': {
+                const appt = appointments.find(a => a.status === 'SCHEDULED');
+                if (appt) {
+                    setTelechatAppointmentId(appt.id);
+                    setShowTelechat(true);
+                }
+                break;
+            }
+            case 'SCROLL_TO':
+                if (action.target) {
+                    const el = document.getElementById(action.target.replace('#', ''));
+                    el?.scrollIntoView({ behavior: 'smooth' });
+                }
+                break;
+            case 'REFRESH_DATA':
+                setRefreshTrigger(prev => prev + 1);
+                break;
+            default:
+                // Broadcast for any handler
+                window.dispatchEvent(new CustomEvent('carexai-action', { detail: action }));
+                break;
+        }
+    };
 
     // --- ACTIONS ---
 
@@ -1464,52 +1581,52 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
         const COLORS = ['#00d4ff', '#00ff9f', '#ff006e', '#8b5cf6'];
 
         return (
-            <div className="space-y-10">
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-                    <div>
-                        <h2 className="text-3xl md:text-4xl font-bold text-white font-['Space_Grotesk'] tracking-tight">Practice Intelligence</h2>
-                        <p className="text-xs text-slate-500 uppercase tracking-widest mt-2">Biometric distribution and protocol efficacy metrics.</p>
-                    </div>
-                    <div className="flex bg-space-900 rounded-2xl p-1 border border-white/5 shadow-2xl glass-card">
-                        <button className="px-6 py-2 text-[10px] font-black uppercase tracking-widest bg-neon-400 text-white rounded-xl shadow-lg transition-all">Cycle: 30D</button>
-                        <button className="px-6 py-2 text-[10px] font-black uppercase tracking-widest text-slate-500 hover:text-white transition-colors">YTD</button>
+        <div className="space-y-10">
+            <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
+                <div>
+                    <h2 className="text-3xl md:text-5xl font-black text-[var(--text-main)] font-display tracking-tight">Practice Intelligence</h2>
+                    <p className="text-[10px] text-[var(--text-muted)] uppercase font-black tracking-[0.3em] mt-2">Biometric distribution and protocol efficacy metrics.</p>
+                </div>
+                <div className="flex glass-card p-1 border-[var(--glass-border)] shadow-2xl">
+                    <button className="px-6 py-2 text-[10px] font-black uppercase tracking-widest bg-[var(--accent-primary)] text-white rounded-xl shadow-lg transition-all">Cycle: 30D</button>
+                    <button className="px-6 py-2 text-[10px] font-black uppercase tracking-widest text-[var(--text-muted)] hover:text-[var(--text-main)] transition-colors">YTD</button>
+                </div>
+            </div>
+
+            {/* KPI Grid */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
+                <div className="glass-card p-8 rounded-[32px] relative overflow-hidden group border-[var(--glass-border)]">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-[var(--accent-primary)] opacity-5 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-700"></div>
+                    <div className="relative z-10">
+                        <p className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-[0.3em] mb-4">Subject Total</p>
+                        <h3 className="text-5xl font-black text-[var(--text-main)] font-display tracking-tighter mb-2">{analytics.totalPatients}</h3>
+                        <p className="text-[10px] text-[var(--accent-secondary)] font-black uppercase tracking-widest flex items-center gap-2">
+                            <span className="flex items-center justify-center w-5 h-5 rounded-full bg-[var(--accent-secondary)]/10">↑</span> 
+                            <span>+12.4% Δ</span>
+                        </p>
                     </div>
                 </div>
 
-                {/* KPI Grid */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
-                    <div className="bg-space-900 border border-white/10 p-8 rounded-[32px] glass-card relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-neon-500/5 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-700"></div>
-                        <div className="relative z-10">
-                            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Subject Total</p>
-                            <h3 className="text-5xl font-bold text-white font-['Space_Grotesk'] tracking-tighter mb-2">{analytics.totalPatients}</h3>
-                            <p className="text-[10px] text-bio-400 font-black uppercase tracking-widest flex items-center gap-2">
-                                <span className="flex items-center justify-center w-5 h-5 rounded-full bg-bio-500/10">↑</span> 
-                                <span>+12.4% Δ</span>
-                            </p>
-                        </div>
-                    </div>
-
-                    <div className="bg-space-900 border border-white/10 p-8 rounded-[32px] glass-card relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-bio-500/5 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-700"></div>
-                        <div className="relative z-10">
-                            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Protocol Efficacy</p>
-                            <h3 className="text-5xl font-bold text-white font-['Space_Grotesk'] tracking-tighter mb-2">{analytics.completionRate}%</h3>
-                            <div className="w-full bg-space-950 h-2 rounded-full mt-4 overflow-hidden border border-white/5 shadow-inner">
-                                <div className="bg-gradient-to-r from-neon-500 to-bio-400 h-full rounded-full shadow-[0_0_10px_rgba(0,212,255,0.5)]" style={{ width: `${analytics.completionRate}%` }}></div>
-                            </div>
-                        </div>
-                    </div>
-
-                    <div className="bg-space-900 border border-white/10 p-8 rounded-[32px] glass-card relative overflow-hidden group">
-                        <div className="absolute top-0 right-0 w-32 h-32 bg-pulse-500/5 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-700"></div>
-                        <div className="relative z-10">
-                            <p className="text-slate-500 text-[10px] font-black uppercase tracking-[0.3em] mb-4">Daily Cycles</p>
-                            <h3 className="text-5xl font-bold text-white font-['Space_Grotesk'] tracking-tighter mb-2">{analytics.appointmentsToday}</h3>
-                            <p className="text-[10px] text-slate-500 mt-2 uppercase font-bold tracking-widest">{analytics.pendingRequests} Syncs Queued</p>
+                <div className="glass-card p-8 rounded-[32px] relative overflow-hidden group border-[var(--glass-border)]">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-[var(--accent-secondary)] opacity-5 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-700"></div>
+                    <div className="relative z-10">
+                        <p className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-[0.3em] mb-4">Protocol Efficacy</p>
+                        <h3 className="text-5xl font-black text-[var(--text-main)] font-display tracking-tighter mb-2">{analytics.completionRate}%</h3>
+                        <div className="w-full bg-black/20 h-2 rounded-full mt-4 overflow-hidden border border-[var(--glass-border)] shadow-inner">
+                            <div className="bg-gradient-to-r from-[var(--accent-primary)] to-[var(--accent-secondary)] h-full rounded-full shadow-[var(--neon-glow)]" style={{ width: `${analytics.completionRate}%` }}></div>
                         </div>
                     </div>
                 </div>
+
+                <div className="glass-card p-8 rounded-[32px] relative overflow-hidden group border-[var(--glass-border)]">
+                    <div className="absolute top-0 right-0 w-32 h-32 bg-[var(--accent-pulse)] opacity-5 rounded-full -mr-12 -mt-12 group-hover:scale-150 transition-transform duration-700"></div>
+                    <div className="relative z-10">
+                        <p className="text-[var(--text-muted)] text-[10px] font-black uppercase tracking-[0.3em] mb-4">Daily Cycles</p>
+                        <h3 className="text-5xl font-black text-[var(--text-main)] font-display tracking-tighter mb-2">{analytics.appointmentsToday}</h3>
+                        <p className="text-[10px] text-[var(--text-muted)] mt-2 uppercase font-black tracking-widest">{analytics.pendingRequests} Syncs Queued</p>
+                    </div>
+                </div>
+            </div>
 
 
                 {/* Charts Section */}
@@ -2515,6 +2632,86 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
         );
     };
 
+    const renderSettings = () => {
+        return (
+            <div className="space-y-8 max-w-4xl mx-auto pb-24">
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} className="mb-8">
+                    <h2 className="text-4xl md:text-5xl font-bold text-white font-['Space_Grotesk'] tracking-tight">Profile Settings</h2>
+                    <p className="text-xs text-slate-500 uppercase tracking-widest mt-2">Manage your clinical profile and digital identity.</p>
+                </motion.div>
+
+                <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.1 }}>
+                    <Card className="glass-card border-white/5 overflow-hidden rounded-[40px] bg-space-900/60 backdrop-blur-xl">
+                        <div className="p-8 md:p-12 space-y-12">
+                            <div className="flex flex-col md:flex-row items-center gap-10 pb-12 border-b border-white/5">
+                                <div className="relative group cursor-pointer" onClick={() => profilePicInputRef.current?.click()}>
+                                    <div className="w-32 h-32 md:w-48 md:h-48 rounded-[48px] overflow-hidden border-2 border-neon-500/50 shadow-[0_0_50px_rgba(0,212,255,0.2)] bg-space-950 flex items-center justify-center transition-all duration-500 group-hover:scale-105 group-hover:border-neon-400 group-hover:shadow-[0_0_60px_rgba(0,212,255,0.3)]">
+                                        {isProfilePicUploading ? (
+                                            <div className="w-12 h-12 border-4 border-neon-400 border-t-transparent rounded-full animate-spin" />
+                                        ) : user.profilePicUrl ? (
+                                            <img src={user.profilePicUrl} alt={user.name} className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" />
+                                        ) : (
+                                            <span className="text-6xl md:text-8xl font-bold text-neon-400 drop-shadow-[0_0_15px_rgba(0,212,255,0.5)]">{user.name.charAt(0)}</span>
+                                        )}
+                                        <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 flex flex-col items-center justify-center transition-all duration-300 rounded-[48px] backdrop-blur-[2px]">
+                                            <span className="text-2xl mb-1">📸</span>
+                                            <span className="text-white text-[10px] font-black uppercase tracking-[0.2em]">Update Matrix</span>
+                                        </div>
+                                    </div>
+                                    <input type="file" ref={profilePicInputRef} className="hidden" accept="image/*" onChange={handleProfilePicUpload} />
+                                </div>
+                                <div className="flex-1 text-center md:text-left space-y-4">
+                                    <div className="space-y-1">
+                                        <p className="text-[10px] font-black text-neon-400 uppercase tracking-[0.4em] drop-shadow-[0_0_5px_rgba(0,212,255,0.5)]">{user.specialization || 'Clinical Specialist'}</p>
+                                        <h3 className="text-4xl md:text-6xl font-bold text-white font-['Space_Grotesk'] tracking-tight">{user.name}</h3>
+                                    </div>
+                                    <div className="flex flex-wrap justify-center md:justify-start gap-6 text-slate-400 text-sm font-light">
+                                        <span className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-full border border-white/5 hover:border-white/10 transition-colors">📧 {user.email}</span>
+                                        <span className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-full border border-white/5 hover:border-white/10 transition-colors">🎓 {user.qualification || 'Verified Practitioner'}</span>
+                                        <span className="flex items-center gap-2 bg-white/5 px-4 py-2 rounded-full border border-white/5 hover:border-white/10 transition-colors">🪪 {user.registrationNumber || 'Pending Sync'}</span>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="grid grid-cols-1 md:grid-cols-2 gap-10">
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 pl-1">Identification Name</label>
+                                    <div className="h-14 px-6 rounded-2xl bg-space-950/80 border border-white/10 text-white flex items-center font-bold text-sm tracking-wide">
+                                        {user.name}
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 pl-1">Primary Specialization</label>
+                                    <div className="h-14 px-6 rounded-2xl bg-space-950/80 border border-white/10 text-neon-400 flex items-center font-bold text-sm tracking-wide">
+                                        {user.specialization || 'General Practice'}
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 pl-1">Medical Council</label>
+                                    <div className="h-14 px-6 rounded-2xl bg-space-950/80 border border-white/10 text-slate-300 flex items-center font-bold text-sm tracking-wide">
+                                        {user.medicalCouncil || 'National Registry'}
+                                    </div>
+                                </div>
+                                <div className="space-y-4">
+                                    <label className="text-[10px] font-black uppercase tracking-[0.3em] text-slate-500 pl-1">System Role</label>
+                                    <div className="h-14 px-6 rounded-2xl bg-space-950/80 border border-white/10 text-bio-400 flex items-center font-bold text-sm tracking-widest uppercase">
+                                        {user.role}
+                                    </div>
+                                </div>
+                            </div>
+                            
+                            <div className="pt-8 flex justify-center md:justify-end">
+                                <Button variant="neon" disabled className="px-10 h-14 rounded-2xl text-[11px] font-black uppercase tracking-[0.2em] opacity-50 cursor-not-allowed">
+                                    Update Extended Profile
+                                </Button>
+                            </div>
+                        </div>
+                    </Card>
+                </motion.div>
+            </div>
+        );
+    };
+
     // --- MAIN RENDER ---
 
     const effectiveStatus = user.status || 'PENDING';
@@ -2601,6 +2798,7 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                     {viewMode === 'dashboard' && renderDashboard()}
                     {viewMode === 'schedule' && renderSchedule()}
                     {viewMode === 'analytics' && renderAnalytics()}
+                    {viewMode === 'settings' && renderSettings()}
                     {viewMode === 'patients' && (selectedPatient ? renderPatientDetails() : (
                         <div className="space-y-6">
                             <div className="mb-8">
@@ -2642,6 +2840,11 @@ export const DoctorDashboard: React.FC<Props> = ({ user: initialUser }) => {
                     <HealthPassport data={passportToView} onClose={() => setPassportToView(null)} isDoctorView={true} />
                 </div>
             )}
+
+            {/* Automation AI Assistant */}
+            <AutomationAssistant onAction={handleDoctorAssistantAction} />
+            
+
         </div>
     );
 };

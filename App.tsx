@@ -109,17 +109,21 @@ function App() {
     setView('APP');
   };
 
+  const handleProfileUpdate = (updatedUser: User) => {
+    setUser(updatedUser);
+  };
+
   const renderDashboard = () => {
     switch (user?.role) {
       case UserRole.PATIENT:
-        return <PatientDashboard user={user as PatientProfile} />;
+        return <PatientDashboard user={user as PatientProfile} onProfileUpdate={handleProfileUpdate} />;
       case UserRole.DOCTOR:
         return (
           <AppErrorBoundary
             fallbackTitle="Doctor dashboard failed to load"
             fallbackMessage="A runtime error occurred in the doctor dashboard. You can reload and continue working."
           >
-            <DoctorDashboard user={user as DoctorProfile} />
+            <DoctorDashboard user={user as DoctorProfile} onProfileUpdate={handleProfileUpdate} />
           </AppErrorBoundary>
         );
       case UserRole.ADMIN:

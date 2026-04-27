@@ -8,13 +8,16 @@ import { Button } from '../components/ui/Button';
 import { Input } from '../components/ui/Input';
 import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, PieChart, Pie, Cell } from 'recharts';
+import { AutomationAssistant } from '../components/AutomationAssistant';
+import { ClientAction } from '../types';
+
 
 type AdminTab = 'OVERVIEW' | 'USERS' | 'VERIFICATION' | 'APPOINTMENTS' | 'RECORDS' | 'SAFETY' | 'BROADCAST' | 'ANALYTICS' | 'SETTINGS' | 'LOGS';
 
 // Demo mode: when running locally we can use mock/demo doctors for richer
 // verification flows. In production we must only surface real doctors coming
 // from the backend API/database.
-const IS_DEMO_MODE = (import.meta as any).env.DEV === true;
+const IS_DEMO_MODE = false; // Demo mode disabled: only real registered accounts and backend data are permitted.
 
 export const AdminDashboard: React.FC = () => {
   const [activeTab, setActiveTab] = useState<AdminTab>('OVERVIEW');
@@ -213,6 +216,50 @@ export const AdminDashboard: React.FC = () => {
           alert("System configuration updated.");
       }
   };
+
+  const handleAdminAssistantAction = (action: ClientAction) => {
+      switch (action.type) {
+          case 'NAVIGATE':
+              if (action.target) {
+                  const target = action.target.toUpperCase();
+                  const validTabs: AdminTab[] = ['OVERVIEW', 'USERS', 'VERIFICATION', 'APPOINTMENTS', 'RECORDS', 'SAFETY', 'BROADCAST', 'ANALYTICS', 'SETTINGS', 'LOGS'];
+                  if (validTabs.includes(target as AdminTab)) {
+                      setActiveTab(target as AdminTab);
+                  }
+              }
+              break;
+          case 'OPEN_USERS': setActiveTab('USERS'); break;
+          case 'OPEN_VERIFICATION': setActiveTab('VERIFICATION'); break;
+          case 'OPEN_APPOINTMENTS': setActiveTab('APPOINTMENTS'); break;
+          case 'OPEN_RECORDS': setActiveTab('RECORDS'); break;
+          case 'OPEN_SAFETY': setActiveTab('SAFETY'); break;
+          case 'OPEN_BROADCAST': setActiveTab('BROADCAST'); break;
+          case 'OPEN_ANALYTICS': setActiveTab('ANALYTICS'); break;
+          case 'OPEN_SETTINGS': setActiveTab('SETTINGS'); break;
+          case 'OPEN_LOGS': setActiveTab('LOGS'); break;
+          case 'REFRESH_DATA': refreshData(); break;
+          case 'SCROLL_TO':
+              if (action.target) {
+                  const el = document.getElementById(action.target.replace('#', ''));
+                  el?.scrollIntoView({ behavior: 'smooth' });
+              }
+              break;
+          case 'BLOCK_USER':
+              if (action.payload?.userId) {
+                  handleBlockUser(action.payload.userId, false);
+              }
+              break;
+          case 'VERIFY_DOCTOR':
+              if (action.payload?.doctorId) {
+                  handleStatusChange(action.payload.doctorId, DoctorStatus.VERIFIED);
+              }
+              break;
+          default:
+              window.dispatchEvent(new CustomEvent('carexai-action', { detail: action }));
+              break;
+      }
+  };
+
 
   const handleStatusChange = async (id: string, status: DoctorStatus) => {
         // Always update backend as source of truth for access control.
@@ -788,6 +835,9 @@ export const AdminDashboard: React.FC = () => {
               </div>
            </div>
         )}
+
+        {/* Automation AI Assistant */}
+        <AutomationAssistant onAction={handleAdminAssistantAction} />
     </div>
   );
 };

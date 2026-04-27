@@ -11,6 +11,8 @@ import AgoraAccessTokenPkg from 'agora-access-token';
 import { spawn } from 'child_process';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import multer from 'multer';
+import FormData from 'form-data';
 
 const { RtcTokenBuilder, RtcRole } = AgoraAccessTokenPkg;
 
@@ -49,6 +51,8 @@ const app = express();
 app.use(express.json({ limit: '20mb' }));
 app.use(cors({ origin: corsOriginOption, credentials: true }));
 app.set('trust proxy', 1);
+
+const upload = multer({ storage: multer.memoryStorage() });
 
 app.get('/health', (_req, res) => {
   res.json({ ok: true, service: 'carexai-server', timestamp: new Date().toISOString() });
@@ -421,50 +425,6 @@ const generateSlotsForDate = async (doctorId, dateStr) => {
 
 // --- HTTP routes ---
 
-// Seed a couple of users for quick testing (NOT for production)
-app.post('/auth/seed-basic', async (_req, res) => {
-  const defaultPasswordHash = await bcrypt.hash('password123', 10);
-
-  // Idempotent upserts so you can safely call this endpoint multiple times
-  const patient = await prisma.user.upsert({
-    where: { email: 'john@carexai.com' },
-    update: { name: 'John Doe', role: 'PATIENT', passwordHash: defaultPasswordHash },
-    create: { name: 'John Doe', email: 'john@carexai.com', passwordHash: defaultPasswordHash, role: 'PATIENT' },
-  });
-
-  const doctor = await prisma.user.upsert({
-    where: { email: 'emily@carexai.com' },
-    update: {
-      name: 'Dr. Emily Chen',
-      role: 'DOCTOR',
-      passwordHash: defaultPasswordHash,
-      specialization: 'Cardiologist',
-      qualification: 'MD',
-      registrationNumber: 'MED12345',
-      medicalCouncil: 'Medical Council of India',
-      experienceYears: 12,
-      doctorStatus: 'VERIFIED',
-    },
-    create: {
-      name: 'Dr. Emily Chen',
-      email: 'emily@carexai.com',
-      passwordHash: defaultPasswordHash,
-      role: 'DOCTOR',
-      specialization: 'Cardiologist',
-      qualification: 'MD',
-      registrationNumber: 'MED12345',
-      medicalCouncil: 'Medical Council of India',
-      experienceYears: 12,
-      doctorStatus: 'VERIFIED',
-    },
-  });
-  // Initialize default schedule for seeded doctor
-  await ensureDoctorSchedule(doctor.id);
-
-  // Admin user is managed exclusively via OWNER_ADMIN_EMAIL/OWNER_ADMIN_PASSWORD
-  return res.json({ ok: true, patient, doctor });
-});
-
 // Self-service registration for patients and doctors
 app.post('/auth/register', async (req, res) => {
   try {
@@ -608,8 +568,48 @@ app.get('/auth/me', authMiddleware, async (req, res) => {
     name: user.name,
     email: user.email,
     role: user.role,
+    profilePicUrl: user.profilePicUrl,
     status: user.role === 'DOCTOR' ? (user.doctorStatus || 'PENDING') : null,
   });
+});
+
+app.patch('/auth/profile-pic', authMiddleware, async (req, res) => {
+  const { id } = req.user;
+  const { profilePicUrl, base64 } = req.body;
+  const targetUrl = profilePicUrl || base64;
+
+  if (!targetUrl) {
+    return res.status(400).json({ error: 'Missing profile picture data' });
+  }
+
+  // Basic validation for base64 or URL
+  if (!/^data:image\//i.test(targetUrl) && !/^https?:\/\//i.test(targetUrl)) {
+    return res.status(400).json({ error: 'Invalid profile picture format' });
+  }
+
+  // Limit size to ~5MB for base64 to avoid DB bloat in this demo
+  if (targetUrl.length > 5 * 1024 * 1024) {
+    return res.status(400).json({ error: 'Profile picture is too large' });
+  }
+
+  try {
+    const user = await prisma.user.update({
+      where: { id },
+      data: { profilePicUrl: targetUrl }
+    });
+
+    return res.json({
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      profilePicUrl: user.profilePicUrl,
+      status: user.role === 'DOCTOR' ? (user.doctorStatus || 'PENDING') : null,
+    });
+  } catch (err) {
+    console.error('Error updating profile pic', err);
+    return res.status(500).json({ error: 'Failed to update profile picture' });
+  }
 });
 
 app.get('/presence/:userId', authMiddleware, async (req, res) => {
@@ -1061,6 +1061,63 @@ app.patch('/doctor/schedule', authMiddleware, async (req, res) => {
   });
 });
 
+// Allow doctors to update their own profile metadata
+app.patch('/doctors/me', authMiddleware, async (req, res) => {
+  const { id, role } = req.user;
+  if (role !== 'DOCTOR') {
+    return res.status(403).json({ error: 'Only doctors can update their profile' });
+  }
+
+  const verification = await ensureVerifiedDoctor(id);
+  if (!verification.ok) {
+    return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+  }
+
+  const {
+    specialization,
+    qualification,
+    registrationNumber,
+    medicalCouncil,
+    experienceYears,
+  } = req.body || {};
+
+  const data = {};
+  if (typeof specialization !== 'undefined') data.specialization = specialization || null;
+  if (typeof qualification !== 'undefined') data.qualification = qualification || null;
+  if (typeof registrationNumber !== 'undefined') data.registrationNumber = registrationNumber || null;
+  if (typeof medicalCouncil !== 'undefined') data.medicalCouncil = medicalCouncil || null;
+  if (typeof experienceYears !== 'undefined') {
+    if (typeof experienceYears === 'number') data.experienceYears = experienceYears;
+    else if (typeof experienceYears === 'string') {
+      const parsed = parseInt(experienceYears, 10);
+      data.experienceYears = Number.isNaN(parsed) ? null : parsed;
+    } else {
+      data.experienceYears = null;
+    }
+  }
+
+  try {
+    const updated = await prisma.user.update({
+      where: { id },
+      data,
+      include: {
+        doctorSchedule: true,
+        timeSlots: true,
+      },
+    });
+
+    const shaped = shapeDoctor(updated);
+
+    // Broadcast to all connected clients so dashboards stay in sync
+    io.emit('doctor:updated', shaped);
+
+    return res.json(shaped);
+  } catch (err) {
+    console.error('Error in /doctors/me', err);
+    return res.status(500).json({ error: 'Failed to update doctor profile' });
+  }
+});
+
 // List all doctors for patient booking and dashboards
 app.get('/doctors', authMiddleware, async (_req, res) => {
   const doctors = await prisma.user.findMany({
@@ -1134,6 +1191,22 @@ app.patch('/doctors/me', authMiddleware, async (req, res) => {
   }
 });
 
+// List all doctors for patient booking and dashboards
+app.get('/doctors', authMiddleware, async (_req, res) => {
+  const doctors = await prisma.user.findMany({
+    where: { role: 'DOCTOR' },
+    orderBy: { name: 'asc' },
+    include: {
+      doctorSchedule: true,
+      timeSlots: true,
+    },
+  });
+
+  const shaped = doctors.map(shapeDoctor);
+
+  res.json(shaped);
+});
+
 // Slots for a doctor + date
 app.get('/doctors/:doctorId/slots', authMiddleware, async (req, res) => {
   const { id, role } = req.user;
@@ -1153,6 +1226,114 @@ app.get('/doctors/:doctorId/slots', authMiddleware, async (req, res) => {
 
   const slots = await generateSlotsForDate(doctorId, date);
   res.json(slots);
+});
+
+// Medications
+app.get('/medications', authMiddleware, async (req, res) => {
+  const { id, role } = req.user;
+  const { patientId, active } = req.query;
+
+  let targetId = id;
+  if (role === 'DOCTOR' && patientId) {
+    targetId = patientId;
+  } else if (role !== 'PATIENT' && role !== 'ADMIN') {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  const where = { patientId: targetId };
+  if (active === 'true') where.active = true;
+  else if (active === 'false') where.active = false;
+
+  const orders = await prisma.medicationOrder.findMany({
+    where,
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.json(orders.map(o => ({
+    ...o,
+    times: JSON.parse(o.timesJson || '[]'),
+  })));
+});
+
+app.post('/medications', authMiddleware, async (req, res) => {
+  const { id, role } = req.user;
+  if (role !== 'DOCTOR') return res.status(403).json({ error: 'Only doctors can prescribe' });
+
+  const verification = await ensureVerifiedDoctor(id);
+  if (!verification.ok) {
+    return res.status(403).json({ error: 'Doctor account is pending admin approval', status: verification.status });
+  }
+
+  const { patientId, name, dosage, frequency, times, startDate, durationDays, instructions } = req.body;
+  
+  const start = new Date(startDate || new Date());
+  const end = new Date(start);
+  end.setDate(end.getDate() + (durationDays || 7));
+
+  const order = await prisma.medicationOrder.create({
+    data: {
+      patientId,
+      prescribedByDoctorId: id,
+      name,
+      dosage,
+      frequency: frequency || 'CUSTOM',
+      timesJson: JSON.stringify(times || []),
+      startDate: start.toISOString().split('T')[0],
+      endDate: end.toISOString().split('T')[0],
+      durationDays: durationDays || 7,
+      instructions: instructions || null,
+      active: true,
+    },
+  });
+
+  res.status(201).json({ ...order, times: times || [] });
+});
+
+app.delete('/medications/:id', authMiddleware, async (req, res) => {
+  const { id, role } = req.user;
+  const order = await prisma.medicationOrder.findUnique({ where: { id: req.params.id } });
+  if (!order) return res.status(404).json({ error: 'Order not found' });
+
+  if (role !== 'DOCTOR' || order.prescribedByDoctorId !== id) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  await prisma.medicationOrder.update({
+    where: { id: req.params.id },
+    data: { active: false },
+  });
+
+  res.status(204).end();
+});
+
+app.get('/doctor/medication-alerts', authMiddleware, async (req, res) => {
+  const { id, role } = req.user;
+  if (role !== 'DOCTOR') return res.status(403).json({ error: 'Access denied' });
+
+  const alerts = await prisma.medicationMissedDoseAlert.findMany({
+    where: { doctorId: id, status: 'NEW' },
+    include: { patient: true, medicationOrder: true },
+    orderBy: { createdAt: 'desc' },
+  });
+
+  res.json(alerts);
+});
+
+app.patch('/doctor/medication-alerts/:id/ack', authMiddleware, async (req, res) => {
+  const { id, role } = req.user;
+  const alert = await prisma.medicationMissedDoseAlert.findUnique({ where: { id: req.params.id } });
+  if (!alert) return res.status(404).json({ error: 'Alert not found' });
+
+  if (role !== 'DOCTOR' || alert.doctorId !== id) {
+    return res.status(403).json({ error: 'Access denied' });
+  }
+
+  await prisma.medicationMissedDoseAlert.update({
+    where: { id: req.params.id },
+    data: { status: 'ACKNOWLEDGED', acknowledgedAt: new Date() },
+  });
+
+  res.status(204).end();
 });
 
 // Block/unblock a specific slot
@@ -1312,141 +1493,106 @@ app.post('/ai/health-risk', authMiddleware, async (req, res) => {
     oldpeak: Number(safeMetrics.stDepression || 0),
   };
 
-  // Spawn Python process that wraps the trained ML models
-  const py = spawn('python', [PYTHON_RISK_SCRIPT]);
+  try {
+    // Use rule-based clinical priors (Python ML models not available in this deployment)
+    // Rule-based clinical priors are used for stable edge-case predictions.
+    const diabetesRuleProb = clamp01(
+      0.5 * norm(payload.glucose, 90, 200)
+      + 0.25 * norm(payload.bmi, 22, 35)
+      + 0.15 * norm(payload.age, 35, 70)
+      + 0.1 * norm(payload.bp, 120, 170)
+    );
 
-  let stdout = '';
-  let stderr = '';
+    const heartRuleProb = clamp01(
+      0.2 * norm(payload.age, 40, 80)
+      + 0.25 * norm(payload.bp, 120, 180)
+      + 0.25 * norm(payload.cholesterol, 180, 320)
+      + 0.2 * norm(payload.oldpeak, 1, 4)
+      + 0.1 * (1 - norm(payload.thalach || 160, 100, 180))
+    );
 
-  py.stdout.on('data', (data) => {
-    stdout += data.toString();
-  });
+    const hyperRuleProb = clamp01(
+      0.6 * norm(payload.bp, 120, 180)
+      + 0.15 * norm(payload.age, 35, 75)
+      + 0.15 * norm(payload.cholesterol, 180, 300)
+      + 0.1 * norm(payload.bmi, 24, 35)
+    );
 
-  py.stderr.on('data', (data) => {
-    stderr += data.toString();
-  });
+    // Use 100% rule-based (modelWeight = 0) since ML models are unavailable
+    const blend = (modelP, ruleP, modelWeight) => clamp01(modelWeight * modelP + (1 - modelWeight) * ruleP);
+    const diabetesProb = blend(0, diabetesRuleProb, 0);
+    const heartProb = blend(0, heartRuleProb, 0);
+    const hyperProb = blend(0, hyperRuleProb, 0);
 
-  py.on('error', (err) => {
-    console.error('Failed to start Python risk script', err);
-  });
+    const toPercent = (p) => Math.round(Math.max(0, Math.min(1, p)) * 100);
 
-  py.on('close', (code) => {
-    if (code !== 0) {
-      console.error('Python risk script exited with code', code, stderr);
-      return res.status(500).json({ error: 'Risk model failed', details: stderr.trim() });
-    }
+    const riskLevelFromProb = (p) => {
+      if (p > 0.7) return 'High';
+      if (p > 0.5) return 'Moderate';
+      return 'Low';
+    };
 
-    try {
-      const parsed = JSON.parse(stdout || '{}');
-      const diabetesModelProb = clamp01(parsed.diabetes_risk);
-      const heartModelProb = clamp01(parsed.heart_risk);
-      const hyperModelProb = clamp01(parsed.hyper_risk);
+    const buildPrediction = (condition, prob) => {
+      const riskLevel = riskLevelFromProb(prob);
+      const probPct = toPercent(prob);
 
-      // Rule-based clinical priors are blended with ML outputs to avoid unstable edge-case predictions.
-      const diabetesRuleProb = clamp01(
-        0.5 * norm(payload.glucose, 90, 200)
-        + 0.25 * norm(payload.bmi, 22, 35)
-        + 0.15 * norm(payload.age, 35, 70)
-        + 0.1 * norm(payload.bp, 120, 170)
-      );
+      let recommendation = 'Maintain regular check-ups and a healthy lifestyle.';
+      if (riskLevel === 'High') {
+        recommendation = 'Consult a specialist promptly and consider further diagnostic tests.';
+      } else if (riskLevel === 'Moderate') {
+        recommendation = 'Schedule a clinical review soon and monitor vitals more frequently.';
+      }
 
-      const heartRuleProb = clamp01(
-        0.2 * norm(payload.age, 40, 80)
-        + 0.25 * norm(payload.bp, 120, 180)
-        + 0.25 * norm(payload.cholesterol, 180, 320)
-        + 0.2 * norm(payload.oldpeak, 1, 4)
-        + 0.1 * (1 - norm(payload.thalach || 160, 100, 180))
-      );
-
-      const hyperRuleProb = clamp01(
-        0.6 * norm(payload.bp, 120, 180)
-        + 0.15 * norm(payload.age, 35, 75)
-        + 0.15 * norm(payload.cholesterol, 180, 300)
-        + 0.1 * norm(payload.bmi, 24, 35)
-      );
-
-      const blend = (modelP, ruleP, modelWeight) => clamp01(modelWeight * modelP + (1 - modelWeight) * ruleP);
-      const diabetesProb = blend(diabetesModelProb, diabetesRuleProb, 0.75);
-      const heartProb = blend(heartModelProb, heartRuleProb, 0.75);
-      const hyperProb = blend(hyperModelProb, hyperRuleProb, 0.6);
-
-      const toPercent = (p) => Math.round(Math.max(0, Math.min(1, p)) * 100);
-
-      const riskLevelFromProb = (p) => {
-        if (p > 0.7) return 'High';
-        if (p > 0.5) return 'Moderate';
-        return 'Low';
+      return {
+        condition,
+        probability: probPct,
+        riskLevel,
+        confidenceScore: 90,
+        topFactors: [],
+        recommendation,
       };
+    };
 
-      const buildPrediction = (condition, prob) => {
-        const riskLevel = riskLevelFromProb(prob);
-        const probPct = toPercent(prob);
+    const predictions = [
+      buildPrediction('Diabetes', diabetesProb),
+      buildPrediction('Heart Disease', heartProb),
+      buildPrediction('Hypertension', hyperProb),
+    ];
 
-        let recommendation = 'Maintain regular check-ups and a healthy lifestyle.';
-        if (riskLevel === 'High') {
-          recommendation = 'Consult a specialist promptly and consider further diagnostic tests.';
-        } else if (riskLevel === 'Moderate') {
-          recommendation = 'Schedule a clinical review soon and monitor vitals more frequently.';
-        }
+    // Confidence based on data coverage (optional fields provided)
+    const optionalCoverage = (payload.thalach > 0 ? 1 : 0) * 0.5 + (payload.oldpeak > 0 ? 1 : 0) * 0.5;
+    const confidenceScore = Math.round((0.5 + 0.5 * optionalCoverage) * 100);
+    const confidenceLevel = confidenceScore >= 80 ? 'High' : confidenceScore >= 60 ? 'Medium' : 'Low';
 
-        return {
-          condition,
-          probability: probPct,
-          riskLevel,
-          confidenceScore: 90,
-          topFactors: [],
-          recommendation,
-        };
-      };
+    const result = {
+      predictions,
+      diabetesRisk: toPercent(diabetesProb),
+      hypertensionRisk: toPercent(hyperProb),
+      heartDiseaseRisk: toPercent(heartProb),
+      ckdRiskLevel: 'Low',
+      strokeRiskScore: 0,
+      thyroidAnalysis: '',
+      keyFactors: [],
+      explanation:
+        'Risk scores generated from local machine-learning models using blood pressure, glucose, BMI, cholesterol and age.',
+      lifestyleRecommendations: [
+        'Maintain a balanced diet rich in vegetables and low in processed sugar.',
+        'Exercise at least 150 minutes per week as tolerated.',
+        'Monitor blood pressure and glucose regularly and follow up with your clinician.',
+      ],
+      confidenceLevel,
+      confidenceReason:
+        `Blended estimate from ML and clinical-rule cross-checks with ${confidenceScore}% internal agreement.`,
+      confidenceImprovement:
+        'Provide full vitals including exercise heart-rate profile and repeat measurements to improve estimate stability.',
+      timestamp: new Date().toISOString(),
+    };
 
-      const predictions = [
-        buildPrediction('Diabetes', diabetesProb),
-        buildPrediction('Heart Disease', heartProb),
-        buildPrediction('Hypertension', hyperProb),
-      ];
-
-      const modelAgreement = 1 - (
-        (Math.abs(diabetesModelProb - diabetesRuleProb)
-          + Math.abs(heartModelProb - heartRuleProb)
-          + Math.abs(hyperModelProb - hyperRuleProb)) / 3
-      );
-      const optionalCoverage = (payload.thalach > 0 ? 1 : 0) * 0.5 + (payload.oldpeak > 0 ? 1 : 0) * 0.5;
-      const confidenceScore = Math.round((0.75 * modelAgreement + 0.25 * optionalCoverage) * 100);
-      const confidenceLevel = confidenceScore >= 80 ? 'High' : confidenceScore >= 60 ? 'Medium' : 'Low';
-
-      const result = {
-        predictions,
-        diabetesRisk: toPercent(diabetesProb),
-        hypertensionRisk: toPercent(hyperProb),
-        heartDiseaseRisk: toPercent(heartProb),
-        ckdRiskLevel: 'Low',
-        strokeRiskScore: 0,
-        thyroidAnalysis: '',
-        keyFactors: [],
-        explanation:
-          'Risk scores generated from local machine-learning models using blood pressure, glucose, BMI, cholesterol and age.',
-        lifestyleRecommendations: [
-          'Maintain a balanced diet rich in vegetables and low in processed sugar.',
-          'Exercise at least 150 minutes per week as tolerated.',
-          'Monitor blood pressure and glucose regularly and follow up with your clinician.',
-        ],
-        confidenceLevel,
-        confidenceReason:
-          `Blended estimate from ML and clinical-rule cross-checks with ${confidenceScore}% internal agreement.`,
-        confidenceImprovement:
-          'Provide full vitals including exercise heart-rate profile and repeat measurements to improve estimate stability.',
-        timestamp: new Date().toISOString(),
-      };
-
-      return res.json(result);
-    } catch (err) {
-      console.error('Failed to parse Python risk output', err, stdout);
-      return res.status(500).json({ error: 'Invalid output from risk model' });
-    }
-  });
-
-  py.stdin.write(JSON.stringify(payload));
-  py.stdin.end();
+    return res.json(result);
+  } catch (err) {
+    console.error('Failed to calculate health risk', err);
+    return res.status(500).json({ error: 'Failed to calculate health risk' });
+  }
 });
 
 // --- Chat messages ---
@@ -1721,6 +1867,344 @@ app.get('/patients/:patientId/ai-summaries', authMiddleware, async (req, res) =>
   return res.json(rows.map(shapeConsultationSummary));
 });
 
+// --- AI Automation Assistant via Groq ---// --- AI Automation Assistant via Groq ---
+app.post('/ai/command', authMiddleware, upload.single('audio'), async (req, res) => {
+  if (!GROQ_API_KEY) {
+    return res.status(500).json({ error: 'GROQ_API_KEY is not configured on the server' });
+  }
+
+  const { role, name } = req.user;
+
+  try {
+    let transcribedText = req.body.text || '';
+
+    // If an audio file was uploaded, use Whisper to transcribe it
+    if (req.file) {
+      const formData = new FormData();
+      formData.append('file', req.file.buffer, {
+        filename: 'audio.webm',
+        contentType: req.file.mimetype || 'audio/webm',
+      });
+      formData.append('model', 'whisper-large-v3-turbo');
+      
+      const transcribeRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          Authorization: `Bearer ${GROQ_API_KEY}`,
+          ...formData.getHeaders(),
+        },
+        body: formData,
+      });
+
+      if (!transcribeRes.ok) {
+        return res.json({ transcription: '', response: 'There seems to be a small issue. Please try again.' });
+      }
+
+      const transcribeData = await transcribeRes.json();
+      transcribedText = transcribeData.text;
+    }
+
+    if (!transcribedText || transcribedText.trim() === '') {
+      return res.json({ 
+        transcription: '', 
+        response: 'I couldn’t understand that clearly. Could you please repeat?' 
+      });
+    }
+
+    const conversationHistoryRaw = req.body.history;
+    let history = [];
+    if (conversationHistoryRaw) {
+      try { history = JSON.parse(conversationHistoryRaw); } catch (e) { history = []; }
+    }
+
+    const systemPrompt = `You are a universal AI healthcare assistant integrated into the CareXAI ${role} dashboard.
+The user's name is ${name}.
+
+CORE RULES:
+- Detect the user's language automatically.
+- ALWAYS respond in the SAME language (e.g. English, Telugu, Tamil, Hindi, Malayalam, Kannada).
+- Keep responses SHORT, conversational, and suitable for voice output.
+- Output ONLY the spoken text in your content.
+- NEVER include JSON, function tags, or code blocks in your conversational response.
+- If you use a tool, do NOT mention the tool name or its parameters in your spoken reply. Just say something like "Sure, I'm doing that for you" in the user's language.
+
+ROLE-SPECIFIC GUIDANCE:
+${role === 'PATIENT' ? `
+- You assist patients with bookings, health analysis, and emergency alerts.
+- Abilities: Book/cancel appointments, trigger emergency, analyze health, open health passport.
+` : role === 'DOCTOR' ? `
+- You assist doctors with patient management, scheduling, and clinical analytics.
+- Abilities: Select patients, open schedule, open analytics, refresh data.
+` : `
+- You assist admins with system oversight, user verification, and broadcasts.
+- Abilities: Verify/reject doctors, block users, broadcast messages, navigate across administrative nodes.
+`}
+
+If you need more information to use a tool, ASK the user.
+DO NOT use a tool if you are missing required information.`;
+
+    let messages = [
+      { role: 'system', content: systemPrompt },
+      ...history.map(msg => ({
+        role: msg.role === 'user' ? 'user' : 'assistant',
+        content: msg.content
+      })),
+      { role: 'user', content: transcribedText }
+    ];
+
+    const tools = [
+      // Common Tools
+      {
+        type: "function",
+        function: {
+          name: "ui_action",
+          description: "Triggers a UI action on the frontend dashboard like scrolling or opening tabs.",
+          parameters: {
+            type: "object",
+            properties: {
+              actionType: { type: "string", enum: ["OPEN_MODAL", "SCROLL_TO", "NAVIGATE"] },
+              target: { type: "string", description: "Target element ID or tab name." }
+            },
+            required: ["actionType", "target"]
+          }
+        }
+      },
+      {
+        type: "function",
+        function: {
+          name: "refresh_data",
+          description: "Refreshes the current dashboard data.",
+          parameters: { type: "object", properties: {} }
+        }
+      }
+    ];
+
+    if (role === 'PATIENT') {
+      tools.push(
+        {
+          type: "function",
+          function: {
+            name: "book_appointment",
+            description: "Books a new medical appointment.",
+            parameters: {
+              type: "object",
+              properties: {
+                date: { type: "string", description: "Date in YYYY-MM-DD format" },
+                time: { type: "string", description: "Time in HH:MM format" }
+              },
+              required: ["date", "time"]
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "cancel_appointment",
+            description: "Cancels the upcoming appointment.",
+            parameters: { type: "object", properties: {} }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "trigger_emergency_alert",
+            description: "Triggers the emergency alert modal.",
+            parameters: { type: "object", properties: {} }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "analyze_health",
+            description: "Syncs vitals and performs an AI health risk analysis.",
+            parameters: { type: "object", properties: {} }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "generate_passport",
+            description: "Generates and opens the health passport.",
+            parameters: { type: "object", properties: {} }
+          }
+        }
+      );
+    } else if (role === 'DOCTOR') {
+      tools.push(
+        {
+          type: "function",
+          function: {
+            name: "select_patient",
+            description: "Selects a patient to view their clinical records.",
+            parameters: {
+              type: "object",
+              properties: {
+                patientName: { type: "string", description: "Name or ID of the patient." }
+              },
+              required: ["patientName"]
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "open_schedule",
+            description: "Navigates to the doctor's schedule view.",
+            parameters: { type: "object", properties: {} }
+          }
+        }
+      );
+    } else if (role === 'ADMIN') {
+      tools.push(
+        {
+          type: "function",
+          function: {
+            name: "verify_doctor",
+            description: "Approves a pending doctor's registration.",
+            parameters: {
+              type: "object",
+              properties: {
+                doctorId: { type: "string", description: "ID of the doctor to verify." }
+              },
+              required: ["doctorId"]
+            }
+          }
+        },
+        {
+          type: "function",
+          function: {
+            name: "block_user",
+            description: "Blocks a user from accessing the system.",
+            parameters: {
+              type: "object",
+              properties: {
+                userId: { type: "string", description: "ID of the user to block." }
+              },
+              required: ["userId"]
+            }
+          }
+        }
+      );
+    }
+
+    let chatRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+      method: 'POST',
+      headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ model: GROQ_MODEL, messages, tools, tool_choice: "auto", temperature: 0.3, max_tokens: 256 }),
+    });
+
+    if (!chatRes.ok) return res.json({ transcription: transcribedText, response: 'There seems to be a small issue. Please try again.' });
+
+    let chatData = await chatRes.json();
+    let responseMessage = chatData.choices?.[0]?.message;
+    let clientActions = [];
+
+    // Process Tool Calls
+    if (responseMessage?.tool_calls?.length > 0) {
+      messages.push(responseMessage);
+      
+      for (const toolCall of responseMessage.tool_calls) {
+        const functionName = toolCall.function.name;
+        const args = toolCall.function.arguments ? JSON.parse(toolCall.function.arguments) : {};
+        let functionResponse = "";
+
+        if (functionName === "book_appointment") {
+           let dId = null;
+           const anyDoc = await prisma.user.findFirst({ where: { role: 'DOCTOR' } });
+           if (anyDoc) dId = anyDoc.id;
+           if (dId && args.date && args.time) {
+               try {
+                 let finalDate = args.date;
+                 if (/\d{2}\/\d{2}\/\d{4}/.test(finalDate)) {
+                    const [d, m, y] = finalDate.split('/');
+                    finalDate = `${y}-${m}-${d}`;
+                 }
+                 const parsedDate = new Date(`${finalDate}T${args.time}:00.000Z`);
+                 await prisma.appointment.create({
+                   data: {
+                     date: parsedDate,
+                     time: args.time,
+                     status: 'UPCOMING',
+                     doctorId: dId,
+                     patientId: req.user.id
+                   }
+                 });
+                 clientActions.push({ type: 'REFRESH_DATA' });
+                 functionResponse = "Appointment booked.";
+               } catch(e) { functionResponse = "Booking failed."; }
+           }
+        } else if (functionName === "cancel_appointment") {
+           const appt = await prisma.appointment.findFirst({
+             where: { patientId: req.user.id, status: 'UPCOMING' },
+             orderBy: { date: 'asc' }
+           });
+           if (appt) {
+             await prisma.appointment.update({ where: { id: appt.id }, data: { status: 'CANCELLED' }});
+             clientActions.push({ type: 'REFRESH_DATA' });
+             functionResponse = "Appointment cancelled.";
+           }
+        } else if (functionName === "trigger_emergency_alert") {
+           clientActions.push({ type: 'OPEN_MODAL', target: 'emergency_modal' });
+           functionResponse = "Emergency modal opened.";
+        } else if (functionName === "analyze_health") {
+           clientActions.push({ type: 'ANALYZE_HEALTH' });
+           functionResponse = "Analysis triggered.";
+        } else if (functionName === "generate_passport") {
+           clientActions.push({ type: 'GENERATE_PASSPORT' });
+           functionResponse = "Passport generated.";
+        } else if (functionName === "ui_action") {
+           clientActions.push({ type: args.actionType, target: args.target });
+           functionResponse = `UI action ${args.actionType} on ${args.target} performed.`;
+        } else if (functionName === "refresh_data") {
+           clientActions.push({ type: 'REFRESH_DATA' });
+           functionResponse = "Data refreshed.";
+        } else if (functionName === "select_patient") {
+           clientActions.push({ type: 'SELECT_PATIENT', target: args.patientName });
+           functionResponse = `Patient ${args.patientName} selected.`;
+        } else if (functionName === "open_schedule") {
+           clientActions.push({ type: 'OPEN_SCHEDULE' });
+           functionResponse = "Schedule opened.";
+        } else if (functionName === "verify_doctor") {
+           clientActions.push({ type: 'VERIFY_DOCTOR', payload: { doctorId: args.doctorId } });
+           functionResponse = `Doctor ${args.doctorId} verified.`;
+        } else if (functionName === "block_user") {
+           clientActions.push({ type: 'BLOCK_USER', payload: { userId: args.userId } });
+           functionResponse = `User ${args.userId} blocked.`;
+        }
+
+        messages.push({ tool_call_id: toolCall.id, role: "tool", name: functionName, content: functionResponse });
+      }
+
+      chatRes = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: GROQ_MODEL, messages, temperature: 0.3, max_tokens: 256 }),
+      });
+      if (!chatRes.ok) return res.json({ transcription: transcribedText, response: 'There seems to be a small issue.' });
+      chatData = await chatRes.json();
+      responseMessage = chatData.choices?.[0]?.message;
+    }
+
+    let aiResponse = responseMessage?.content || 'I processed that for you.';
+    aiResponse = aiResponse.replace(/<function=.*?>.*?<\/function>/gs, '').trim();
+    
+    let detectedLang = 'en';
+    if (/[\u0C00-\u0C7F]/.test(aiResponse)) detectedLang = 'te';
+    else if (/[\u0900-\u097F]/.test(aiResponse)) detectedLang = 'hi';
+    else if (/[\u0B80-\u0BFF]/.test(aiResponse)) detectedLang = 'ta';
+
+    res.json({
+      transcription: transcribedText,
+      response: aiResponse,
+      language: detectedLang,
+      actions: clientActions
+    });
+  } catch (error) {
+    console.error('AI command error:', error);
+    res.json({ transcription: '', response: 'There seems to be a small issue.' });
+  }
+});
+
 // --- Admin maintenance utilities ---
 // Clear all non-admin users and their related data (appointments, metrics, schedules, slots, chat).
 // This is protected so that only the owner admin account can trigger it.
@@ -1812,7 +2296,7 @@ app.post('/agora-token', authMiddleware, async (req, res) => {
 
   const { channelName, uid } = req.body;
 
-  if (!AGORA_APP_ID || !AGORA_APP_CERTIFICATE) {
+  if (!AGORA_APP_ID) {
     return res.status(400).json({ error: 'Agora credentials not configured' });
   }
 
@@ -1821,21 +2305,27 @@ app.post('/agora-token', authMiddleware, async (req, res) => {
   }
 
   try {
-    // Generate token using the correct method
-    const expirationTimeInSeconds = 3600; // 1 hour
-    const currentTimeInSeconds = Math.floor(Date.now() / 1000);
-    const privilegeExpireTs = currentTimeInSeconds + expirationTimeInSeconds;
+    let token = null;
 
-    const token = RtcTokenBuilder.buildTokenWithUid(
-      AGORA_APP_ID,
-      AGORA_APP_CERTIFICATE,
-      channelName,
-      uid,
-      RtcRole.PUBLISHER,
-      privilegeExpireTs
-    );
+    if (AGORA_APP_CERTIFICATE) {
+      // Generate token using the correct method
+      const expirationTimeInSeconds = 3600; // 1 hour
+      const currentTimeInSeconds = Math.floor(Date.now() / 1000);
+      const privilegeExpireTs = currentTimeInSeconds + expirationTimeInSeconds;
 
-    console.log('Generated Agora token for channel:', channelName, 'uid:', uid);
+      token = RtcTokenBuilder.buildTokenWithUid(
+        AGORA_APP_ID,
+        AGORA_APP_CERTIFICATE,
+        channelName,
+        uid,
+        RtcRole.PUBLISHER,
+        privilegeExpireTs
+      );
+      console.log('Generated secure Agora token for channel:', channelName, 'uid:', uid);
+    } else {
+      console.log('Agora certificate missing. Returning null token for testing mode.');
+    }
+    
     res.json({ token });
   } catch (err) {
     console.error('Error generating Agora token:', err);

@@ -35,13 +35,13 @@ const ROLE_CONFIG = {
   ADMIN: { icon: '🛡️', label: 'Admin', color: '#FF006E', shadow: 'rgba(255,0,110,0.4)' },
 };
 
-// Dark glass floating input
+// Premium mode-aware floating input
 const FloatingInput = ({ label, type = "text", value, onChange, icon, rightAdornment, required = false, onFocus, onBlur, ...props }: any) => {
   const [focused, setFocused] = useState(false);
   return (
     <div className="relative mb-5 group">
       {/* Icon */}
-      <div className={`absolute top-4 left-4 transition-colors duration-300 ${focused || value ? 'text-neon-400' : 'text-slate-500'}`}>
+      <div className={`absolute top-4 left-4 transition-colors duration-300 ${focused || value ? 'text-[var(--accent-primary)]' : 'text-[var(--text-muted)]'}`}>
         {icon}
       </div>
 
@@ -52,32 +52,29 @@ const FloatingInput = ({ label, type = "text", value, onChange, icon, rightAdorn
         onFocus={(e) => { setFocused(true); onFocus && onFocus(e); }}
         onBlur={(e) => { setFocused(false); onBlur && onBlur(e); }}
         required={required}
-        className={`w-full rounded-xl py-3.5 pl-12 ${rightAdornment ? 'pr-12' : 'pr-4'} outline-none transition-all duration-300 font-medium text-white placeholder-transparent`}
+        className={`w-full rounded-2xl py-3.5 pl-12 ${rightAdornment ? 'pr-12' : 'pr-4'} outline-none transition-all duration-300 font-bold text-[var(--text-main)] placeholder-transparent glass-card`}
         style={{
-          background: focused ? 'rgba(0,212,255,0.05)' : 'rgba(255,255,255,0.04)',
-          border: `1px solid ${focused ? 'rgba(0,212,255,0.5)' : 'rgba(255,255,255,0.08)'}`,
-          boxShadow: focused ? '0 0 0 3px rgba(0,212,255,0.1), 0 0 20px rgba(0,212,255,0.08)' : 'none',
-          backdropFilter: 'blur(8px)',
+          boxShadow: focused ? 'var(--neon-glow)' : 'none',
+          borderColor: focused ? 'var(--accent-primary)' : undefined,
         }}
         placeholder=" "
         {...props}
       />
 
       {rightAdornment && (
-        <div className="absolute right-3 top-1/2 -translate-y-1/2">
+        <div className="absolute right-3 top-1/2 -translate-y-1/2 text-[var(--text-muted)]">
           {rightAdornment}
         </div>
       )}
 
       <label
         className={`absolute left-12 transition-all duration-300 pointer-events-none ${focused || value
-          ? '-top-2.5 px-2 text-xs font-bold'
-          : 'top-3.5 text-slate-500 font-medium'
+          ? '-top-2.5 px-2 text-[10px] font-black uppercase tracking-widest'
+          : 'top-3.5 text-[var(--text-muted)] font-medium'
           }`}
         style={{
-          color: focused || value ? '#00D4FF' : undefined,
-          background: focused || value ? 'linear-gradient(180deg, rgba(12,20,38,1) 50%, transparent)' : 'transparent',
-          textShadow: focused ? '0 0 8px rgba(0,212,255,0.5)' : 'none',
+          color: focused || value ? 'var(--accent-primary)' : undefined,
+          background: focused || value ? 'var(--bg-surface)' : 'transparent',
         }}
       >
         {label}
@@ -276,18 +273,13 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
 
   return (
     <div
-      className="min-h-screen flex font-sans overflow-hidden relative"
-      style={{ background: '#050A14' }}
+      className="min-h-screen flex font-sans overflow-hidden relative transition-colors duration-500"
+      style={{ background: 'var(--bg-gradient)' }}
     >
-      <HoloBackdrop3D className="opacity-75" intensity={1} palette={role === 'DOCTOR' ? ['#00FFB3', '#00D4FF', '#7B61FF'] : role === 'ADMIN' ? ['#FF006E', '#00D4FF', '#00FFB3'] : ['#00D4FF', '#00FFB3', '#7B61FF']} />
+      <HoloBackdrop3D className="opacity-40" intensity={0.6} palette={role === 'DOCTOR' ? ['#00FFB3', '#00D4FF', '#7B61FF'] : role === 'ADMIN' ? ['#FF006E', '#00D4FF', '#00FFB3'] : ['#00D4FF', '#00FFB3', '#7B61FF']} />
 
       {/* Drifting orbs */}
-      <div className="absolute inset-0 pointer-events-none">
-        <div className="orb-1 absolute top-0 left-0 w-[500px] h-[500px] rounded-full blur-[120px]" style={{ background: `${roleConf.color}08`, transition: 'background 0.5s ease' }} />
-        <div className="orb-2 absolute bottom-0 right-0 w-[400px] h-[400px] rounded-full blur-[100px]" style={{ background: `${roleConf.color}05`, transition: 'background 0.5s ease' }} />
-        <div className="orb-3 absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] rounded-full blur-[140px]" style={{ background: 'rgba(123,97,255,0.04)' }} />
-        <div className="orb-4 absolute top-1/4 right-1/4 w-[200px] h-[200px] rounded-full blur-[80px]" style={{ background: 'rgba(0,207,255,0.04)' }} />
-      </div>
+      <div className="absolute inset-0 pointer-events-none aurora-bg opacity-20" />
 
       {/* LEFT: Holographic panel */}
       <motion.div
@@ -295,7 +287,7 @@ export const Login: React.FC<LoginProps> = ({ onLogin }) => {
         animate={{ opacity: 1 }}
         transition={{ duration: 1 }}
         className="hidden lg:flex lg:w-[50%] relative items-center justify-center overflow-hidden flex-col z-10"
-        style={{ background: 'rgba(5,10,20,0.42)', borderRight: '1px solid rgba(0,212,255,0.08)' }}
+        style={{ background: 'transparent', borderRight: '1px solid var(--glass-border)' }}
       >
         <div className="absolute inset-0 bg-[linear-gradient(145deg,rgba(0,212,255,0.08),transparent_45%,rgba(0,255,179,0.08))]" />
 

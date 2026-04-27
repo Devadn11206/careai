@@ -95,6 +95,7 @@ export interface LoginResponseUser {
   name: string;
   email: string;
   role: UserRole;
+  profilePicUrl?: string | null;
   status?: DoctorStatus | null;
 }
 
@@ -258,6 +259,13 @@ export const BackendAPI = {
 
   async getCurrentUser(): Promise<LoginResponseUser> {
     return api<LoginResponseUser>('/auth/me', { method: 'GET' });
+  },
+
+  async updateProfilePic(profilePicUrl: string): Promise<LoginResponseUser> {
+    return api<LoginResponseUser>('/auth/profile-pic', {
+      method: 'PATCH',
+      body: JSON.stringify({ profilePicUrl }),
+    });
   },
 
   async getDoctors(): Promise<BackendDoctor[]> {

@@ -53,19 +53,18 @@ const StatCard: React.FC<{ label: string; value: string; color: string; delay?: 
     initial={{ opacity: 0, scale: 0.8 }}
     animate={{ opacity: 1, scale: 1 }}
     transition={{ delay, duration: 0.5, type: 'spring', stiffness: 200 }}
-    className="rounded-2xl px-4 py-3 text-center"
-    style={{ background: `${color}10`, border: `1px solid ${color}30`, backdropFilter: 'blur(12px)' }}
+    className="rounded-2xl px-4 py-3 text-center glass-card"
+    style={{ borderColor: `${color}40` }}
   >
-    <p className="text-xs font-bold uppercase tracking-wider mb-1" style={{ color: `${color}99` }}>{label}</p>
-    <p className="text-base font-bold" style={{ color }}>{value}</p>
+    <p className="text-[10px] font-black uppercase tracking-[0.2em] mb-1 opacity-60" style={{ color }}>{label}</p>
+    <p className="text-base font-black font-display" style={{ color }}>{value}</p>
   </motion.div>
 );
 
 // Feature card
 const FeatureCard: React.FC<{ title: string; desc: string; index: number; icon: string }> = ({ title, desc, index, icon }) => {
   const reduceMotion = useReducedMotion();
-  const neonColors = ['#00D4FF', '#00FFB3', '#FF006E', '#00D4FF', '#00FFB3'];
-  const color = neonColors[index % neonColors.length];
+  const color = `var(--accent-${index % 2 === 0 ? 'primary' : 'secondary'})`;
 
   return (
     <motion.div
@@ -73,44 +72,44 @@ const FeatureCard: React.FC<{ title: string; desc: string; index: number; icon: 
       whileInView={{ opacity: 1, y: 0 }}
       viewport={{ once: true, amount: 0.2 }}
       transition={{ duration: 0.5, delay: index * 0.08 }}
-      whileHover={reduceMotion ? undefined : { y: -8, scale: 1.01 }}
-      className="group relative rounded-2xl p-6 overflow-hidden cursor-default"
+      whileHover={reduceMotion ? undefined : { y: -8, scale: 1.02 }}
+      className="group relative rounded-[2.5rem] p-8 overflow-hidden cursor-default glass-card"
       style={{
-        background: 'rgba(5,10,20,0.6)',
-        border: `1px solid ${color}20`,
-        backdropFilter: 'blur(16px)',
-        transition: 'box-shadow 0.3s ease',
+        borderColor: `${color}20`,
       }}
-      onMouseEnter={e => (e.currentTarget.style.boxShadow = `0 0 30px ${color}15, 0 20px 40px rgba(0,0,0,0.3)`)}
-      onMouseLeave={e => (e.currentTarget.style.boxShadow = 'none')}
     >
       {/* Background gradient on hover */}
       <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-500 pointer-events-none"
-        style={{ background: `radial-gradient(circle at top left, ${color}08, transparent 60%)` }}
+        style={{ background: `radial-gradient(circle at top left, ${color}10, transparent 60%)` }}
       />
 
       {/* Index badge */}
-      <div className="flex items-start justify-between gap-4 mb-4">
+      <div className="flex items-start justify-between gap-4 mb-6">
         <div
-          className="w-10 h-10 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
-          style={{ background: `${color}15`, border: `1px solid ${color}30`, boxShadow: `0 0 10px ${color}20` }}
+          className="w-14 h-14 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0 bg-white/5 border border-white/10 shadow-lg"
+          style={{ borderColor: `${color}40`, color }}
         >
           {icon}
         </div>
         <span
-          className="text-2xl font-bold opacity-20 group-hover:opacity-40 transition-opacity"
-          style={{ fontFamily: "'Space Grotesk', sans-serif", color }}
+          className="text-[10px] font-black uppercase tracking-[0.3em] opacity-20"
+          style={{ color }}
         >
-          {String(index + 1).padStart(2, '0')}
+          SEC-0{index + 1}
         </span>
       </div>
 
-      <h3 className="text-sm font-bold text-white mb-2" style={{ fontFamily: "'Space Grotesk', sans-serif" }}>{title}</h3>
-      <p className="text-sm leading-relaxed" style={{ color: 'rgba(255,255,255,0.5)' }}>{desc}</p>
+      <h3 className="text-xl font-black font-display mb-3 text-[var(--text-main)] group-hover:premium-gradient-text transition-all">
+        {title}
+      </h3>
+      <p className="text-sm leading-relaxed text-[var(--text-muted)] font-medium">
+        {desc}
+      </p>
 
-      {/* Bottom neon line */}
-      <div className="absolute bottom-0 left-0 h-px w-0 group-hover:w-full transition-all duration-500 rounded-full"
-        style={{ background: `linear-gradient(90deg, transparent, ${color}, transparent)` }}
+      {/* Hover glow line */}
+      <div 
+        className="absolute bottom-0 left-0 h-1 w-0 group-hover:w-full transition-all duration-700"
+        style={{ background: `linear-gradient(to right, ${color}, transparent)` }}
       />
     </motion.div>
   );

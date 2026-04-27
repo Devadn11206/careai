@@ -43,6 +43,10 @@ export const VideoCall: React.FC<VideoCallProps> = ({ appointmentId, otherUserNa
   const [isGeneratingSummary, setIsGeneratingSummary] = useState(false);
   const [generatedSummary, setGeneratedSummary] = useState<ConsultationSummary | null>(null);
 
+  const [isVideoEnabled, setIsVideoEnabled] = useState(true);
+  const [isAudioEnabled, setIsAudioEnabled] = useState(true);
+  const [isLowBandwidthMode, setIsLowBandwidthMode] = useState(false);
+
   const isDoctor = currentUserRole === UserRole.DOCTOR;
 
   useEffect(() => {
@@ -128,6 +132,44 @@ export const VideoCall: React.FC<VideoCallProps> = ({ appointmentId, otherUserNa
       setSpeechError(err?.message || 'Failed to generate AI summary.');
     } finally {
       setIsGeneratingSummary(false);
+    }
+  };
+
+  const toggleVideo = async () => {
+    if (localTracksRef.current && localTracksRef.current[1]) {
+      const videoTrack = localTracksRef.current[1];
+      const newState = !isVideoEnabled;
+      await videoTrack.setEnabled(newState);
+      setIsVideoEnabled(newState);
+    }
+  };
+
+  const toggleAudio = async () => {
+    if (localTracksRef.current && localTracksRef.current[0]) {
+      const audioTrack = localTracksRef.current[0];
+      const newState = !isAudioEnabled;
+      await audioTrack.setEnabled(newState);
+      setIsAudioEnabled(newState);
+    }
+  };
+
+  const toggleLowBandwidth = async () => {
+    if (localTracksRef.current && localTracksRef.current[1]) {
+      const videoTrack = localTracksRef.current[1];
+      const newState = !isLowBandwidthMode;
+      
+      try {
+        if (newState) {
+          // Drop resolution and bitrate heavily for low bandwidth
+          await videoTrack.setEncoderConfiguration({ width: 320, height: 240, frameRate: 15, bitrateMax: 150 });
+        } else {
+          // Restore to standard/higher resolution
+          await videoTrack.setEncoderConfiguration({ width: 640, height: 480, frameRate: 30 });
+        }
+        setIsLowBandwidthMode(newState);
+      } catch (err) {
+        console.error("Failed to set encoder configuration", err);
+      }
     }
   };
 
@@ -279,8 +321,33 @@ export const VideoCall: React.FC<VideoCallProps> = ({ appointmentId, otherUserNa
             </div>
           )}
 
-          <div className="flex justify-end gap-3">
-            <Button variant="secondary" onClick={onClose}>End Call</Button>
+          <div className="flex flex-col md:flex-row justify-between items-center bg-slate-800/80 p-4 rounded-xl border border-slate-700 gap-4">
+            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-center md:justify-start">
+              <Button 
+                variant={isVideoEnabled ? "primary" : "secondary"} 
+                onClick={toggleVideo}
+                className={!isVideoEnabled ? "bg-rose-500/20 text-rose-300 border-rose-500/50 hover:bg-rose-500/30" : ""}
+              >
+                {isVideoEnabled ? '📹 Camera On' : '🚫 Camera Off (Voice Only)'}
+              </Button>
+              <Button 
+                variant={isAudioEnabled ? "primary" : "secondary"} 
+                onClick={toggleAudio}
+                className={!isAudioEnabled ? "bg-rose-500/20 text-rose-300 border-rose-500/50 hover:bg-rose-500/30" : ""}
+              >
+                {isAudioEnabled ? '🎙️ Mic On' : '🔇 Mic Muted'}
+              </Button>
+            </div>
+            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto justify-center md:justify-end">
+              <Button 
+                variant={isLowBandwidthMode ? "neon" : "outline"} 
+                onClick={toggleLowBandwidth}
+                className={isLowBandwidthMode ? "bg-amber-500/20 text-amber-300 border-amber-500/50 hover:bg-amber-500/30 shadow-[0_0_15px_rgba(245,158,11,0.2)]" : ""}
+              >
+                {isLowBandwidthMode ? '⚡ Low Bandwidth: ON' : '📶 Low Bandwidth: OFF'}
+              </Button>
+              <Button variant="secondary" onClick={onClose} className="bg-red-500/10 text-red-400 hover:bg-red-500/20 border-red-500/30">End Call</Button>
+            </div>
           </div>
         </div>
       </div>

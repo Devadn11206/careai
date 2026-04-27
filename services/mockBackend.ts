@@ -13,77 +13,16 @@ const getDefaultSchedule = (): DaySchedule[] => [
 ];
 
 const SEED_CREDENTIALS: Record<string, string> = {
-  'john@carexai.com': 'password123',
-  'sarah@carexai.com': 'password123',
-  'emily@carexai.com': 'password123',
-  'alan@carexai.com': 'password123',
-  'ddnandu3@gmail.com': 'Ddn11206' // Default Admin Credentials
+  'ddnandu3@gmail.com': '123456' // Owner Admin Credentials
 };
 
-const SEED_PATIENTS: PatientProfile[] = [
-  { 
-    id: 'p1', name: 'John Doe', email: 'john@carexai.com', role: UserRole.PATIENT, age: 45, gender: 'Male', bloodGroup: 'O+', assignedDoctorId: 'd1',
-    riskStatus: 'WATCH', lastVisit: '2 days ago', preferredLanguage: 'English', isBlocked: false, sharedWithDoctors: []
-  },
-  { 
-    id: 'p2', name: 'Sarah Smith', email: 'sarah@carexai.com', role: UserRole.PATIENT, age: 32, gender: 'Female', bloodGroup: 'A-', assignedDoctorId: 'd1', 
-    riskStatus: 'STABLE', lastVisit: '1 week ago', preferredLanguage: 'Spanish', isBlocked: false, sharedWithDoctors: []
-  },
-  {
-    id: 'p3', name: 'Robert Johnson', email: 'rob@carexai.com', role: UserRole.PATIENT, age: 62, gender: 'Male', bloodGroup: 'B+', assignedDoctorId: 'd1',
-    riskStatus: 'CRITICAL', lastVisit: 'Yesterday', preferredLanguage: 'English', isBlocked: false, sharedWithDoctors: []
-  }
-];
+const SEED_PATIENTS: PatientProfile[] = [];
 
-const SEED_DOCTORS: DoctorProfile[] = [
-  { 
-    id: 'd1', name: 'Dr. Emily Chen', email: 'emily@carexai.com', role: UserRole.DOCTOR, 
-    specialization: 'Cardiologist', experienceYears: 12, qualification: 'MD, PhD', registrationNumber: 'MED12345',
-    medicalCouncil: 'Medical Council of India', status: DoctorStatus.VERIFIED, bio: 'Expert in preventive cardiology and heart health.',
-    schedule: getDefaultSchedule(),
-    slotDuration: 30,
-    defaultMaxPatients: 1, // Private practice
-    rating: 4.8,
-    isBlocked: false
-  },
-  { 
-    id: 'd2', name: 'Dr. Alan Grant', email: 'alan@carexai.com', role: UserRole.DOCTOR, 
-    specialization: 'Endocrinologist', experienceYears: 15, qualification: 'MD', registrationNumber: 'MED67890',
-    medicalCouncil: 'Maharashtra Medical Council', status: DoctorStatus.VERIFIED, bio: 'Specializing in diabetes management and thyroid disorders.',
-    schedule: getDefaultSchedule(),
-    slotDuration: 15,
-    defaultMaxPatients: 5, // OPD Style
-    rating: 4.9,
-    isBlocked: false
-  },
-  { 
-    id: 'd3', name: 'Dr. Priya Sharma', email: 'priya@carexai.com', role: UserRole.DOCTOR, 
-    specialization: 'Nephrologist', experienceYears: 10, qualification: 'MD, DM', registrationNumber: 'MED11223',
-    medicalCouncil: 'Delhi Medical Council', status: DoctorStatus.VERIFIED, bio: 'Specialist in kidney care and hypertension.',
-    schedule: getDefaultSchedule(),
-    slotDuration: 30,
-    defaultMaxPatients: 1,
-    rating: 4.7,
-    isBlocked: false
-  }
-];
+const SEED_DOCTORS: DoctorProfile[] = [];
 
-const SEED_FAMILY: Record<string, FamilyMember[]> = {
-  'p1': [
-    { id: 'f1', name: 'Jane Doe', relation: 'Spouse', age: 43, condition: 'Healthy' },
-    { id: 'f2', name: 'Timmy Doe', relation: 'Child', age: 12 }
-  ],
-  'p3': [
-    { id: 'f3', name: 'Martha Johnson', relation: 'Spouse', age: 60, condition: 'Hypertension' }
-  ]
-};
+const SEED_FAMILY: Record<string, FamilyMember[]> = {};
 
-const SEED_MEDICATIONS: Medication[] = [
-    { id: 'm1', patientId: 'p1', name: 'Metformin', dosage: '500mg', time: 'Morning', taken: true },
-    { id: 'm2', patientId: 'p1', name: 'Atorvastatin', dosage: '10mg', time: 'Night', taken: false },
-    { id: 'm3', patientId: 'p2', name: 'Vitamin D3', dosage: '1000IU', time: 'Morning', taken: true },
-    { id: 'm4', patientId: 'p3', name: 'Amlodipine', dosage: '5mg', time: 'Morning', taken: false }
-];
+const SEED_MEDICATIONS: Medication[] = [];
 
 const MOCK_ADMIN: User = { id: 'a1', name: 'Super Admin', email: 'ddnandu3@gmail.com', role: UserRole.ADMIN };
 
@@ -370,8 +309,22 @@ export const MockBackend = {
   // --- NEW SYMPTOM SCREENING LOGIC ---
   saveSymptomScreening: async (patientId: string, answers: Record<string, number>): Promise<PatientProfile> => {
     const patients = getStored<PatientProfile[]>(KEYS.PATIENTS, SEED_PATIENTS);
-    const index = patients.findIndex(p => p.id === patientId);
-    if (index === -1) throw new Error("Patient not found");
+    let index = patients.findIndex(p => p.id === patientId);
+    
+    if (index === -1) {
+        // Auto-create to support demo mode for users registered on real backend
+        const newP: PatientProfile = {
+            id: patientId,
+            name: "CareXAI Patient",
+            email: "demo@carex.ai",
+            role: UserRole.PATIENT,
+            metrics: { history: [] }
+        };
+        patients.push(newP);
+        index = patients.length - 1;
+    }
+
+    const patient = patients[index];
 
     // Weights & Logic
     let bpScore = 0;

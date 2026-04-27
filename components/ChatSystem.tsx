@@ -105,7 +105,7 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
 
                 const sent = await BackendAPI.sendChatMessage({
                     appointmentId,
-                    content: newMessage,
+                    content: btoa(unescape(encodeURIComponent(newMessage))),
                     attachmentUrl,
                     attachmentType,
                 });
@@ -129,7 +129,7 @@ export const ChatSystem: React.FC<Props> = ({ currentUserId, currentUserRole, ap
     };
 
   const decodeMessage = (encoded: string) => {
-      try { return atob(encoded); } catch (e) { return encoded; }
+      try { return decodeURIComponent(escape(atob(encoded))); } catch (e) { return encoded; }
   };
 
   const formatTime = (isoString: string) => {

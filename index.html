@@ -130,460 +130,146 @@
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Space+Grotesk:wght@400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=DM+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
   <style>
     /* ============================================
-       DESIGN TOKENS (CSS CUSTOM PROPERTIES)
+       DESIGN TOKENS & SYSTEM VARIABLES
     ============================================ */
     :root {
-      --bg-primary: #050A1F;
-      --bg-secondary: #0A1628;
-      --glass: rgba(255, 255, 255, 0.05);
-      --border-glass: rgba(0, 245, 212, 0.15);
-      --accent-teal: #00F5D4;
-      --accent-cyan: #00CFFF;
-      --accent-violet: #7B61FF;
-      --accent-rose: #FF6B9D;
-      --text-primary: #E8F4FD;
-      --text-muted: #8BA3C7;
-      --glow-teal: 0 0 30px rgba(0, 245, 212, 0.4);
-      --glow-cyan: 0 0 30px rgba(0, 207, 255, 0.4);
-      --glow-violet: 0 0 30px rgba(123, 97, 255, 0.4);
+      /* Light Mode Tokens (Medical Professional) */
+      --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #f1f5f9 100%);
+      --bg-surface: #ffffff;
+      --glass-bg: rgba(255, 255, 255, 0.45);
+      --glass-border: rgba(255, 255, 255, 0.6);
+      --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
+      
+      --accent-primary: #3b82f6; /* Blue */
+      --accent-secondary: #10b981; /* Emerald */
+      --accent-pulse: #f43f5e; /* Rose */
+      
+      --text-main: #0f172a;
+      --text-muted: #64748b;
+      --text-invert: #ffffff;
+
+      --neon-glow: 0 0 15px rgba(59, 130, 246, 0.3);
     }
 
+    .dark {
+      /* Dark Mode Tokens (Bioluminescent Space) */
+      --bg-gradient: radial-gradient(circle at top left, rgba(0, 212, 255, 0.05), transparent 30%),
+                     radial-gradient(circle at bottom right, rgba(255, 0, 110, 0.05), transparent 30%),
+                     linear-gradient(180deg, #050a14 0%, #02050d 100%);
+      --bg-surface: #0a1628;
+      --glass-bg: rgba(5, 10, 20, 0.65);
+      --glass-border: rgba(0, 212, 255, 0.12);
+      --glass-shadow: 0 10px 40px rgba(0, 0, 0, 0.4), 0 0 20px rgba(0, 212, 255, 0.05);
+
+      --accent-primary: #00d4ff; /* Electric Cyan */
+      --accent-secondary: #00ffb3; /* Bio Green */
+      --accent-pulse: #ff006e; /* Neon Pink */
+
+      --text-main: #f8fafc;
+      --text-muted: #94a3b8;
+      --text-invert: #050a14;
+
+      --neon-glow: 0 0 25px rgba(0, 212, 255, 0.4);
+    }
+
+    /* ============================================
+       BASE STYLES
+    ============================================ */
     body {
       font-family: 'DM Sans', 'Inter', sans-serif;
-      background:
-        radial-gradient(circle at top left, rgba(0, 212, 255, 0.08), transparent 32%),
-        radial-gradient(circle at 80% 18%, rgba(0, 255, 179, 0.08), transparent 28%),
-        linear-gradient(180deg, #050A14 0%, #02050D 100%);
-      color: #E8F4FD;
+      background: var(--bg-gradient);
+      color: var(--text-main);
+      min-height: 100vh;
+      overflow-x: hidden;
+      transition: background-color 0.5s cubic-bezier(0.4, 0, 0.2, 1), color 0.5s ease;
     }
 
     html {
-      background: #050A14;
-      color-scheme: dark;
       scroll-behavior: smooth;
     }
 
-    #root {
-      min-height: 100vh;
-      background: transparent;
-    }
-
     h1, h2, h3, .font-display, .font-orbitron {
-      font-family: 'Orbitron', 'Space Grotesk', 'Inter', sans-serif;
-    }
-
-    .font-space { font-family: 'Space Grotesk', 'Inter', sans-serif; }
-
-    /* ============================================
-       NEON PULSE ANIMATIONS
-    ============================================ */
-    @keyframes neon-pulse {
-      0%, 100% {
-        box-shadow: 0 0 5px rgba(0, 212, 255, 0.4), 0 0 20px rgba(0, 212, 255, 0.2), 0 0 40px rgba(0, 212, 255, 0.1);
-      }
-      50% {
-        box-shadow: 0 0 10px rgba(0, 212, 255, 0.8), 0 0 30px rgba(0, 212, 255, 0.5), 0 0 60px rgba(0, 212, 255, 0.3);
-      }
-    }
-
-    @keyframes neon-pulse-green {
-      0%, 100% {
-        box-shadow: 0 0 5px rgba(0, 255, 179, 0.4), 0 0 20px rgba(0, 255, 179, 0.2);
-      }
-      50% {
-        box-shadow: 0 0 10px rgba(0, 255, 179, 0.8), 0 0 30px rgba(0, 255, 179, 0.5), 0 0 60px rgba(0, 255, 179, 0.3);
-      }
-    }
-
-    @keyframes neon-text-pulse {
-      0%, 100% { text-shadow: 0 0 8px rgba(0, 212, 255, 0.8), 0 0 20px rgba(0, 212, 255, 0.5); }
-      50% { text-shadow: 0 0 16px rgba(0, 212, 255, 1), 0 0 40px rgba(0, 212, 255, 0.8), 0 0 80px rgba(0, 212, 255, 0.4); }
+      font-family: 'Orbitron', 'Space Grotesk', sans-serif;
+      letter-spacing: -0.01em;
     }
 
     /* ============================================
-       SHIMMER SWEEP
+       GLASSMORPHISM SYSTEM
     ============================================ */
-    @keyframes shimmer-sweep {
-      0% { transform: translateX(-100%) skewX(-15deg); }
-      100% { transform: translateX(300%) skewX(-15deg); }
+    .glass-card {
+      background: var(--glass-bg);
+      border: 1px solid var(--glass-border);
+      backdrop-filter: blur(20px);
+      -webkit-backdrop-filter: blur(20px);
+      box-shadow: var(--glass-shadow);
+      transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
     }
 
-    .shimmer-btn::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.2), transparent);
-      transform: translateX(-100%) skewX(-15deg);
-      animation: shimmer-sweep 2.5s ease-in-out infinite;
-      animation-delay: 1s;
-      pointer-events: none;
+    .glass-card:hover {
+      box-shadow: var(--glass-shadow), 0 0 15px rgba(0, 212, 255, 0.1);
+      border-color: rgba(0, 212, 255, 0.3);
+      transform: translateY(-2px);
     }
 
     /* ============================================
-       GRID DOT PATTERN BACKGROUND
+       ANIMATIONS
     ============================================ */
-    .grid-dot-bg {
-      background-image: radial-gradient(circle, rgba(0, 212, 255, 0.12) 1px, transparent 1px);
-      background-size: 32px 32px;
-    }
-
-    @keyframes grid-pulse {
-      0%, 100% { opacity: 0.3; }
-      50% { opacity: 0.6; }
-    }
-
-    .grid-dot-bg-animated {
-      background-image: radial-gradient(circle, rgba(0, 212, 255, 0.15) 1px, transparent 1px);
-      background-size: 32px 32px;
-      animation: grid-pulse 4s ease-in-out infinite;
-    }
-
-    /* ============================================
-       DATA STREAM / ECG
-    ============================================ */
-    @keyframes ecg-flash {
-      0%, 90%, 100% { opacity: 1; }
-      95% { opacity: 0.3; }
-    }
-
-    /* ============================================
-       PARTICLE FLOAT
-    ============================================ */
-    @keyframes particle-float {
-      0%, 100% { transform: translateY(0px) translateX(0px) scale(1); opacity: 0.4; }
-      25% { transform: translateY(-20px) translateX(10px) scale(1.1); opacity: 0.7; }
-      50% { transform: translateY(-10px) translateX(-15px) scale(0.9); opacity: 0.5; }
-      75% { transform: translateY(-30px) translateX(5px) scale(1.05); opacity: 0.6; }
-    }
-
-    /* ============================================
-       ORBITAL RING ROTATION
-    ============================================ */
-    @keyframes orbit-slow {
-      from { transform: rotateX(70deg) rotateZ(0deg); }
-      to { transform: rotateX(70deg) rotateZ(360deg); }
-    }
-
-    @keyframes orbit-reverse {
-      from { transform: rotateX(60deg) rotateZ(360deg); }
-      to { transform: rotateX(60deg) rotateZ(0deg); }
-    }
-
-    @keyframes orbit-tilt {
-      from { transform: rotateX(50deg) rotateY(20deg) rotateZ(0deg); }
-      to { transform: rotateX(50deg) rotateY(20deg) rotateZ(360deg); }
-    }
-
-    /* ============================================
-       SCAN LINE
-    ============================================ */
-    @keyframes scan-line {
-      0% { top: 0%; opacity: 1; }
-      100% { top: 100%; opacity: 0; }
-    }
-
-    /* ============================================
-       ORB DRIFT (large glowing background orbs)
-    ============================================ */
-    @keyframes orb-drift-1 {
-      0%   { transform: translate(0px, 0px) scale(1); }
-      25%  { transform: translate(60px, -40px) scale(1.05); }
-      50%  { transform: translate(120px, 20px) scale(0.95); }
-      75%  { transform: translate(40px, 60px) scale(1.08); }
-      100% { transform: translate(0px, 0px) scale(1); }
-    }
-    @keyframes orb-drift-2 {
-      0%   { transform: translate(0px, 0px) scale(1); }
-      33%  { transform: translate(-80px, 50px) scale(1.1); }
-      66%  { transform: translate(30px, -70px) scale(0.9); }
-      100% { transform: translate(0px, 0px) scale(1); }
-    }
-    @keyframes orb-drift-3 {
-      0%   { transform: translate(0px, 0px) scale(1); }
-      40%  { transform: translate(70px, 80px) scale(1.06); }
-      80%  { transform: translate(-50px, 30px) scale(0.94); }
-      100% { transform: translate(0px, 0px) scale(1); }
-    }
-    .orb-1 { animation: orb-drift-1 18s ease-in-out infinite; }
-    .orb-2 { animation: orb-drift-2 24s ease-in-out infinite; }
-    .orb-3 { animation: orb-drift-3 20s ease-in-out infinite; }
-    .orb-4 { animation: orb-drift-2 28s ease-in-out infinite reverse; }
-
-    /* ============================================
-       FLOAT ANIMATION
-    ============================================ */
-    @keyframes float {
-      0%, 100% { transform: translateY(0px); }
-      50%       { transform: translateY(-12px); }
-    }
-    .animate-float { animation: float 4s ease-in-out infinite; }
-    .animate-float-slow { animation: float 6s ease-in-out infinite; }
-    .animate-float-2 { animation: float 5s ease-in-out infinite; animation-delay: 1s; }
-    .animate-float-3 { animation: float 4.5s ease-in-out infinite; animation-delay: 2s; }
-
-    /* ============================================
-       BORDER GLOW CYCLE
-    ============================================ */
-    @keyframes border-glow-cycle {
-      0%   { border-color: rgba(0, 245, 212, 0.4); box-shadow: 0 0 20px rgba(0, 245, 212, 0.2); }
-      33%  { border-color: rgba(0, 207, 255, 0.4); box-shadow: 0 0 20px rgba(0, 207, 255, 0.2); }
-      66%  { border-color: rgba(123, 97, 255, 0.4); box-shadow: 0 0 20px rgba(123, 97, 255, 0.2); }
-      100% { border-color: rgba(0, 245, 212, 0.4); box-shadow: 0 0 20px rgba(0, 245, 212, 0.2); }
-    }
-    .border-glow-cycle { animation: border-glow-cycle 4s ease-in-out infinite; border: 1px solid; }
-
-    /* ============================================
-       3D TILT CARD UTILITY
-    ============================================ */
-    .tilt-card {
-      transform-style: preserve-3d;
-      transition: transform 0.1s ease-out, box-shadow 0.3s ease;
-    }
-    .tilt-card:hover {
-      box-shadow: 0 20px 60px rgba(0, 245, 212, 0.15), 0 0 40px rgba(0, 207, 255, 0.1);
-    }
-
-    /* ============================================
-       3D FLIP CARD
-    ============================================ */
-    .flip-card { perspective: 1000px; }
-    .flip-card-inner {
-      position: relative;
-      width: 100%;
-      height: 100%;
-      transition: transform 0.7s cubic-bezier(0.4, 0.2, 0.2, 1);
-      transform-style: preserve-3d;
-    }
-    .flip-card:hover .flip-card-inner { transform: rotateY(180deg); }
-    .flip-card-front, .flip-card-back {
-      position: absolute;
-      inset: 0;
-      backface-visibility: hidden;
-      -webkit-backface-visibility: hidden;
-      border-radius: inherit;
-    }
-    .flip-card-back { transform: rotateY(180deg); }
-
-    /* ============================================
-       LEGACY BLOB ANIMATIONS (preserved)
-    ============================================ */
-    @keyframes cxai-blob {
-      0% { transform: translate3d(0, 0, 0) scale(1); }
-      33% { transform: translate3d(18px, -22px, 0) scale(1.06); }
-      66% { transform: translate3d(-14px, 16px, 0) scale(0.98); }
-      100% { transform: translate3d(0, 0, 0) scale(1); }
-    }
-
-    .animate-blob {
-      animation: cxai-blob 12s ease-in-out infinite;
-      will-change: transform;
-    }
-
-    .animation-delay-2000 { animation-delay: 2s; }
-    .animation-delay-4000 { animation-delay: 4s; }
-
-    @keyframes cxai-gradient {
+    @keyframes aurora {
       0% { background-position: 0% 50%; }
       50% { background-position: 100% 50%; }
       100% { background-position: 0% 50%; }
     }
 
-    /* Light mode gradient (legacy) */
-    .cxai-gradient-motion {
-      background: radial-gradient(1200px 700px at 10% 0%, rgba(37, 99, 235, 0.16), transparent 60%),
-        radial-gradient(1000px 600px at 90% 10%, rgba(20, 184, 166, 0.12), transparent 60%),
-        radial-gradient(1000px 600px at 50% 100%, rgba(99, 102, 241, 0.10), transparent 60%),
-        linear-gradient(120deg, rgba(248, 250, 252, 1), rgba(239, 246, 255, 0.55), rgba(248, 250, 252, 1));
-      background-size: 200% 200%;
-      animation: cxai-gradient 18s ease-in-out infinite;
-      will-change: background-position;
+    .aurora-bg {
+      background: linear-gradient(-45deg, #00d4ff20, #00ffb310, #ff006e15, #3b82f610);
+      background-size: 400% 400%;
+      animation: aurora 15s ease infinite;
     }
 
-    /* Dark mode gradient (deep space) */
-    .dark .cxai-gradient-motion {
-      background: radial-gradient(1200px 700px at 10% 0%, rgba(0, 212, 255, 0.08), transparent 60%),
-        radial-gradient(1000px 600px at 90% 10%, rgba(0, 255, 179, 0.05), transparent 60%),
-        radial-gradient(1000px 600px at 50% 100%, rgba(255, 0, 110, 0.05), transparent 60%),
-        linear-gradient(120deg, rgba(5, 10, 20, 1), rgba(0, 20, 40, 0.9), rgba(5, 10, 20, 1));
-      background-size: 200% 200%;
+    @keyframes float {
+      0%, 100% { transform: translateY(0); }
+      50% { transform: translateY(-10px); }
     }
 
-    /* ============================================
-       GLASS CARD UTILITY
-    ============================================ */
-    .glass-card {
-      background: rgba(255, 255, 255, 0.7);
-      border: 1px solid rgba(255, 255, 255, 0.5);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
+    .animate-float { animation: float 6s ease-in-out infinite; }
+
+    @keyframes neon-pulse {
+      0%, 100% { box-shadow: 0 0 15px var(--accent-primary); opacity: 0.8; }
+      50% { box-shadow: 0 0 35px var(--accent-primary); opacity: 1; }
     }
 
-    .dark .glass-card {
-      background: rgba(0, 212, 255, 0.03);
-      border: 1px solid rgba(0, 212, 255, 0.12);
-      backdrop-filter: blur(20px);
-      -webkit-backdrop-filter: blur(20px);
-    }
-
-    .glass-card-dark {
-      background: rgba(5, 10, 20, 0.75);
-      border: 1px solid rgba(0, 212, 255, 0.15);
-      backdrop-filter: blur(24px);
-      -webkit-backdrop-filter: blur(24px);
-    }
+    .neon-pulse { animation: neon-pulse 3s infinite; }
 
     /* ============================================
-       NEON TEXT UTILITIES
+       UI UTILITIES
     ============================================ */
-    .neon-text-cyan {
-      color: var(--accent-cyan, #00CFFF);
-      text-shadow: 0 0 10px rgba(0, 207, 255, 0.8), 0 0 30px rgba(0, 207, 255, 0.4);
-    }
-    .neon-text-teal {
-      color: var(--accent-teal, #00F5D4);
-      text-shadow: 0 0 10px rgba(0, 245, 212, 0.8), 0 0 30px rgba(0, 245, 212, 0.4);
-    }
-    .neon-text-violet {
-      color: var(--accent-violet, #7B61FF);
-      text-shadow: 0 0 10px rgba(123, 97, 255, 0.8), 0 0 30px rgba(123, 97, 255, 0.4);
-    }
-    .neon-text-green {
-      color: #00FFB3;
-      text-shadow: 0 0 10px rgba(0, 255, 179, 0.8), 0 0 30px rgba(0, 255, 179, 0.4);
-    }
-    .neon-glow-cyan { animation: neon-pulse 2.5s ease-in-out infinite; }
-    .neon-glow-green { animation: neon-pulse-green 2.5s ease-in-out infinite; }
-
-    /* Orbitron display headings */
-    .display-heading {
-      font-family: 'Orbitron', 'Space Grotesk', sans-serif;
-      letter-spacing: 0.02em;
+    .premium-gradient-text {
+      background: linear-gradient(to right, var(--accent-primary), var(--accent-secondary));
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      font-weight: 800;
     }
 
-    /* ============================================
-       PROGRESS BAR ANIMATION
-    ============================================ */
-    @keyframes progress-fill {
-      from { width: 0%; }
-      to { width: 100%; }
-    }
-
-    .progress-auto {
-      animation: progress-fill 3s cubic-bezier(0.4, 0, 0.2, 1) forwards;
-    }
-
-    /* ============================================
-       DARK MODE TRANSITIONS
-    ============================================ */
-    body, div, nav, button, input, select, textarea, span, p, h1, h2, h3, h4, h5, h6 {
-      transition-property: background-color, border-color, color, fill, stroke;
-      transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
-      transition-duration: 300ms;
-    }
-
-    /* ============================================
-       CUSTOM SCROLLBAR (NEON)
-    ============================================ */
-    ::-webkit-scrollbar { width: 6px; height: 6px; }
-    ::-webkit-scrollbar-track { background: transparent; }
-    ::-webkit-scrollbar-thumb {
-      background: rgba(37, 99, 235, 0.5);
-      border-radius: 3px;
-    }
-    ::-webkit-scrollbar-thumb:hover {
-      background: rgba(37, 99, 235, 0.9);
-    }
-    .dark ::-webkit-scrollbar-thumb {
-      background: rgba(0, 212, 255, 0.4);
-    }
-    .dark ::-webkit-scrollbar-thumb:hover {
-      background: rgba(0, 212, 255, 0.8);
-    }
-
-    /* ============================================
-       PRINT STYLES (preserved)
-    ============================================ */
-    @media print {
-      @page { size: A4; margin: 10mm; }
-      body {
-        -webkit-print-color-adjust: exact;
-        print-color-adjust: exact;
-        background: white;
-      }
-      body * { visibility: hidden; }
-      .print-passport, .print-passport * { visibility: visible; }
-      .print-passport {
-        position: absolute; left: 0; top: 0;
-        width: 100%; margin: 0; padding: 0; background: white;
-      }
-      .print-hidden { display: none !important; }
-      .recharts-wrapper { break-inside: avoid; }
-    }
-
-    /* custom scrollbar class */
-    .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+    .custom-scrollbar::-webkit-scrollbar { width: 5px; }
     .custom-scrollbar::-webkit-scrollbar-track { background: transparent; }
     .custom-scrollbar::-webkit-scrollbar-thumb {
-      background: rgba(0, 212, 255, 0.3);
-      border-radius: 2px;
+      background: var(--accent-primary);
+      border-radius: 10px;
+      opacity: 0.5;
     }
 
-    @keyframes aurora-drift {
-      0%, 100% { transform: translate3d(-2%, -2%, 0) scale(1); opacity: 0.7; }
-      50% { transform: translate3d(2%, 2%, 0) scale(1.05); opacity: 1; }
+    /* ============================================
+       RESPONSIVE REFINEMENTS
+    ============================================ */
+    @media (max-width: 768px) {
+      .glass-card { backdrop-filter: blur(12px); }
     }
 
-    @keyframes float-3d {
-      0%, 100% { transform: translate3d(0, 0, 0) rotate(0deg); }
-      50% { transform: translate3d(0, -12px, 0) rotate(6deg); }
-    }
-
-    @keyframes shimmer-flow {
-      0% { transform: translateX(-120%) skewX(-18deg); }
-      100% { transform: translateX(220%) skewX(-18deg); }
-    }
-
-    .aurora-drift {
-      animation: aurora-drift 12s ease-in-out infinite;
-    }
-
-    .float-3d {
-      animation: float-3d 7s ease-in-out infinite;
-    }
-
-    .shimmer-flow::after {
-      content: '';
-      position: absolute;
-      inset: 0;
-      background: linear-gradient(90deg, transparent, rgba(255,255,255,0.22), transparent);
-      transform: translateX(-120%) skewX(-18deg);
-      animation: shimmer-flow 3.4s ease-in-out infinite;
-      pointer-events: none;
-    }
-
-    .glass-shell {
-      background: linear-gradient(180deg, rgba(8, 15, 28, 0.72), rgba(8, 15, 28, 0.48));
-      border: 1px solid rgba(0, 212, 255, 0.14);
-      backdrop-filter: blur(24px);
-      box-shadow: 0 24px 80px rgba(0, 0, 0, 0.28);
-    }
-
-    .depth-card {
-      transform-style: preserve-3d;
-      transition: transform 180ms ease-out, box-shadow 220ms ease-out, border-color 220ms ease-out;
-    }
-
-    .depth-card:hover {
-      box-shadow: 0 24px 60px rgba(0, 212, 255, 0.12), 0 20px 50px rgba(0, 0, 0, 0.32);
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      *, *::before, *::after {
-        animation-duration: 0.001ms !important;
-        animation-iteration-count: 1 !important;
-        transition-duration: 0.001ms !important;
-        scroll-behavior: auto !important;
-      }
+    /* Print settings */
+    @media print {
+      body { background: white; color: black; }
+      .glass-card { border: 1px solid #ccc; box-shadow: none; backdrop-filter: none; }
+      .no-print { display: none !important; }
     }
   </style>
   <script type="importmap">

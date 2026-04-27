@@ -10,22 +10,25 @@ import { GeminiService } from '../services/geminiService';
 import { ResponsiveContainer, AreaChart, Area, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend } from 'recharts';
 import { motion, AnimatePresence } from 'framer-motion';
 import type { Variants } from 'framer-motion';
-import { MedicalChatbot } from '../components/MedicalChatbot';
+
 import { ChatSystem } from '../components/ChatSystem';
+
 import { HealthRiskPredictionModule } from '../components/HealthRiskPredictionModule';
 import { HealthPassport } from '../components/HealthPassport';
 import { HealthLinkBridge } from '../components/HealthLinkBridge';
+import { AutomationAssistant } from '../components/AutomationAssistant';
 
 const LazyVideoCall = lazy(() => import('../components/VideoCall').then((module) => ({ default: module.VideoCall })));
 const prefetchVideoCall = () => { void import('../components/VideoCall'); };
 
 interface Props {
     user: PatientProfile;
+    onProfileUpdate?: (user: PatientProfile) => void;
 }
 
 // Demo mode: enabled in local development only. In production builds we must
 // never surface hardcoded/demo doctors; only real backend doctors are shown.
-const IS_DEMO_MODE = (import.meta as any).env.DEV === true;
+const IS_DEMO_MODE = false; // Demo mode disabled: only real registered accounts and backend data are permitted.
 
 // Animation Variants
 const containerVariants: Variants = {
@@ -43,7 +46,7 @@ const itemVariants: Variants = {
     visible: { opacity: 1, y: 0, transition: { type: 'spring', stiffness: 100 } }
 };
 
-export const PatientDashboard: React.FC<Props> = ({ user }) => {
+export const PatientDashboard: React.FC<Props> = ({ user, onProfileUpdate }) => {
     // --- STATE MANAGEMENT ---
     const [metrics, setMetrics] = useState<HealthMetrics>({
         systolicBP: 0,
@@ -101,6 +104,39 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
     const [activeChatAppt, setActiveChatAppt] = useState<Appointment | null>(null);
     const [activeVideoCall, setActiveVideoCall] = useState<Appointment | null>(null);
     const [queueInfo, setQueueInfo] = useState<Record<string, { ahead: number; delayMinutes: number; status: Appointment['status'] }>>({});
+    const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+    const [isProfilePicUploading, setIsProfilePicUploading] = useState(false);
+    const profilePicInputRef = useRef<HTMLInputElement>(null);
+
+    const handleProfilePicUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+        const file = e.target.files?.[0];
+        if (!file) return;
+
+        // Basic validation
+        if (!file.type.startsWith('image/')) {
+            alert('Please select an image file.');
+            return;
+        }
+
+        setIsProfilePicUploading(true);
+        try {
+            const reader = new FileReader();
+            reader.onloadend = async () => {
+                const base64 = reader.result as string;
+                const updatedUser = await BackendAPI.updateProfilePic(base64);
+                if (onProfileUpdate) onProfileUpdate(updatedUser as PatientProfile);
+                setRefreshTrigger(prev => prev + 1);
+            };
+            reader.readAsDataURL(file);
+        } catch (err) {
+            console.error('Failed to upload profile pic', err);
+            alert('Failed to update profile picture. Please try a smaller image.');
+        } finally {
+            setIsProfilePicUploading(false);
+            if (profilePicInputRef.current) profilePicInputRef.current.value = '';
+        }
+    };
 
     const openDocument = (url: string) => {
         if (!url) return;
@@ -128,6 +164,40 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
         window.open(url, '_blank', 'noopener,noreferrer');
     };
 
+    const handleAssistantAction = (action: { type: string; target?: string }) => {
+        switch (action.type) {
+            case 'OPEN_MODAL':
+                if (action.target === 'booking_modal') setShowBookingModal(true);
+                if (action.target === 'passport_modal') setShowPassportModal(true);
+                if (action.target === 'emergency_modal') setShowEmergencyModal(true);
+                break;
+            case 'SCROLL_TO':
+                if (action.target === '#history') document.getElementById('history-section')?.scrollIntoView({ behavior: 'smooth' });
+                if (action.target === '#documents') document.getElementById('documents-section')?.scrollIntoView({ behavior: 'smooth' });
+                if (action.target === '#risk-module') document.getElementById('risk-module')?.scrollIntoView({ behavior: 'smooth' });
+                break;
+            case 'ANALYZE_HEALTH':
+                handleAnalyze();
+                break;
+            case 'GENERATE_PASSPORT':
+                handleGeneratePassport();
+                break;
+            case 'START_VIDEO_CALL':
+                const videoAppt = appointments.find(a => a.status === 'SCHEDULED' && a.consultationType === 'VIDEO');
+                if (videoAppt) setActiveVideoCall(videoAppt);
+                else alert("No scheduled video consultations found.");
+                break;
+            case 'OPEN_CHAT':
+                const chatAppt = appointments.find(a => a.status === 'SCHEDULED');
+                if (chatAppt) setActiveChatAppt(chatAppt);
+                else alert("No active appointments found for communication.");
+                break;
+            case 'REFRESH_DATA':
+                setRefreshTrigger(prev => prev + 1);
+                break;
+        }
+    };
+
     const trendData = history.map((h, idx) => ({
         timestamp: h.timestamp || `reading-${idx + 1}`,
         systolicBP: Number.isFinite(h.systolicBP) ? h.systolicBP : 0,
@@ -153,6 +223,19 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
     });
 
     // --- INITIAL DATA LOAD ---
+    useEffect(() => {
+        const actionHandler = (e: any) => handleAssistantAction(e.detail);
+        const refreshHandler = () => setRefreshTrigger(prev => prev + 1);
+        
+        window.addEventListener('carexai-action', actionHandler);
+        window.addEventListener('refresh-dashboard', refreshHandler);
+
+        return () => {
+            window.removeEventListener('carexai-action', actionHandler);
+            window.removeEventListener('refresh-dashboard', refreshHandler);
+        };
+    }, []);
+
     useEffect(() => {
         const loadData = async () => {
             const [hist, docs, appts, backendDoctors, recDocs, meds] = await Promise.all([
@@ -192,7 +275,7 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
         // Keep non-appointment data in sync via mock backend for now
         const unsubscribe = MockBackend.subscribe(loadData);
         return () => unsubscribe();
-    }, [user.id]);
+    }, [user.id, refreshTrigger]);
 
     // Realtime appointment updates from backend
     useEffect(() => {
@@ -504,43 +587,58 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
         >
 
             {/* 1. HERO SECTION: Health Status & Actions */}
-            <motion.div variants={itemVariants} className="relative rounded-[32px] overflow-hidden shadow-2xl bg-space-950/80 border border-neon-500/20 glass-card">
-                <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-neon-600/20 rounded-full blur-[140px] -mr-32 -mt-32 pointer-events-none opacity-60" />
-                <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-bio-600/10 rounded-full blur-[120px] -ml-20 -mb-20 pointer-events-none opacity-40" />
+            <motion.div variants={itemVariants} className="relative rounded-[32px] overflow-hidden glass-card">
+                <div className="absolute top-0 right-0 w-[600px] h-[600px] bg-[var(--accent-primary)] opacity-10 rounded-full blur-[140px] -mr-32 -mt-32 pointer-events-none" />
+                <div className="absolute bottom-0 left-0 w-[400px] h-[400px] bg-[var(--accent-secondary)] opacity-10 rounded-full blur-[120px] -ml-20 -mb-20 pointer-events-none" />
 
                 <div className="relative z-10 p-8 md:p-12">
                     <div className="flex flex-col md:flex-row justify-between md:items-center gap-8 mb-10">
                         <div>
                             <div className="flex items-center gap-2 mb-4">
-                                <span className="px-3 py-1 rounded-full bg-neon-500/10 border border-neon-500/30 text-[10px] font-bold uppercase tracking-[0.2em] text-neon-400 backdrop-blur-md">
+                                <span className="px-3 py-1 rounded-full bg-[var(--accent-primary)]/10 border border-[var(--accent-primary)]/30 text-[10px] font-black uppercase tracking-[0.2em] text-[var(--accent-primary)] backdrop-blur-md">
                                     Systems Operational
                                 </span>
-                                <span className={`px-3 py-1 rounded-full border backdrop-blur-md text-[10px] font-bold uppercase tracking-[0.2em] ${user.riskStatus === 'STABLE' ? 'bg-bio-500/20 border-bio-500/40 text-bio-300' :
-                                    user.riskStatus === 'WATCH' ? 'bg-amber-500/20 border-amber-500/40 text-amber-300' :
-                                        'bg-pulse-500/20 border-pulse-500/40 text-pulse-400'
+                                <span className={`px-3 py-1 rounded-full border backdrop-blur-md text-[10px] font-black uppercase tracking-[0.2em] ${user.riskStatus === 'STABLE' ? 'bg-[var(--accent-secondary)]/20 border-[var(--accent-secondary)]/40 text-[var(--accent-secondary)]' :
+                                    user.riskStatus === 'WATCH' ? 'bg-amber-500/20 border-amber-500/40 text-amber-500' :
+                                        'bg-[var(--accent-pulse)]/20 border-[var(--accent-pulse)]/40 text-[var(--accent-pulse)]'
                                     }`}>
                                     {user.riskStatus}
                                 </span>
                             </div>
-                            <h1 className="text-4xl md:text-7xl font-bold font-['Space_Grotesk'] tracking-tight mb-4">
-                                Welcome, <span className="text-transparent bg-clip-text bg-gradient-to-r from-neon-400 via-bio-300 to-white neon-text-cyan">{user.name.split(' ')[0]}</span>
+                            <h1 className="text-4xl md:text-7xl font-black font-display tracking-tight mb-4 flex items-center gap-6">
+                                <div className="relative group cursor-pointer" onClick={() => profilePicInputRef.current?.click()}>
+                                    <div className="w-16 h-16 md:w-24 md:h-24 rounded-[24px] overflow-hidden border-2 border-[var(--accent-primary)]/50 shadow-[var(--neon-glow)] bg-[var(--bg-surface)] flex items-center justify-center transition-all group-hover:scale-105 group-hover:border-[var(--accent-primary)]">
+                                        {isProfilePicUploading ? (
+                                            <div className="w-8 h-8 border-4 border-[var(--accent-primary)] border-t-transparent rounded-full animate-spin" />
+                                        ) : user.profilePicUrl ? (
+                                            <img src={user.profilePicUrl} alt={user.name} className="w-full h-full object-cover" />
+                                        ) : (
+                                            <span className="text-3xl md:text-5xl font-bold text-[var(--accent-primary)]">{user.name.charAt(0)}</span>
+                                        )}
+                                        <div className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity rounded-[24px]">
+                                            <span className="text-white text-[10px] font-bold uppercase tracking-widest">Update</span>
+                                        </div>
+                                    </div>
+                                    <input type="file" ref={profilePicInputRef} className="hidden" accept="image/*" onChange={handleProfilePicUpload} />
+                                </div>
+                                <div className="text-[var(--text-main)]">
+                                    Welcome, <span className="premium-gradient-text">{user.name}</span>
+                                </div>
                             </h1>
-                            <p className="text-slate-400 text-lg max-w-xl font-light leading-relaxed">
-                                Biometric monitoring initialized. You have <span className="text-white font-medium">{appointments.filter(a => a.status === 'SCHEDULED').length}</span> upcoming sessions. All vital systems report nominal.
+                            <p className="text-[var(--text-muted)] text-lg max-w-xl font-medium leading-relaxed">
+                                Biometric monitoring initialized. You have <span className="text-[var(--text-main)] font-black">{appointments.filter(a => a.status === 'SCHEDULED').length}</span> upcoming sessions. All systems report nominal.
                             </p>
                         </div>
                         <div className="flex flex-col sm:flex-row gap-4">
                             <Button
-                                variant="neon"
                                 onClick={() => document.getElementById('risk-module')?.scrollIntoView({ behavior: 'smooth' })}
-                                className="px-8 py-6 rounded-2xl flex items-center gap-3 font-bold text-base transition-all hover:scale-105"
+                                className="px-8 py-6 rounded-2xl flex items-center gap-3 font-black text-base transition-all hover:scale-105 shadow-lg bg-[var(--accent-primary)] text-white hover:bg-[var(--accent-primary)]/90"
                             >
                                 <span className="text-2xl">🧬</span> Sync Vitals
                             </Button>
                             <Button
-                                variant="cyber"
                                 onClick={() => setShowBookingModal(true)}
-                                className="px-8 py-6 rounded-2xl flex items-center gap-3 font-bold text-base transition-all hover:scale-105"
+                                className="px-8 py-6 rounded-2xl flex items-center gap-3 font-black text-base transition-all hover:scale-105 glass-card border-[var(--accent-primary)]/30 text-[var(--text-main)]"
                             >
                                 <span className="text-2xl">⚡</span> Schedule
                             </Button>
@@ -548,21 +646,21 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                     </div>
 
                     {/* Stats Ribbon */}
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-8 border-t border-white/5">
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-4 pt-8 border-t border-[var(--glass-border)]">
                         {[
-                            { label: 'Blood Pressure', value: metrics.systolicBP ? `${metrics.systolicBP}/${metrics.diastolicBP}` : '--/--', unit: 'mmHg', icon: '❤️', glowColor: 'neon-400' },
-                            { label: 'Glucose Level', value: metrics.glucose || '--', unit: 'mg/dL', icon: '🍬', glowColor: 'bio-400' },
-                            { label: 'Body Mass Index', value: metrics.bmi || '--', unit: 'kg/m²', icon: '⚖️', glowColor: 'neon-400' },
-                            { label: 'Health Alerts', value: aiResult?.predictions?.filter(p => p.riskLevel !== 'Low').length || 0, unit: 'Active', icon: '⚠️', highlight: true, glowColor: 'pulse-400' }
+                            { label: 'Blood Pressure', value: metrics.systolicBP ? `${metrics.systolicBP}/${metrics.diastolicBP}` : '--/--', unit: 'mmHg', icon: '❤️' },
+                            { label: 'Glucose Level', value: metrics.glucose || '--', unit: 'mg/dL', icon: '🍬' },
+                            { label: 'Body Mass Index', value: metrics.bmi || '--', unit: 'kg/m²', icon: '⚖️' },
+                            { label: 'Health Alerts', value: aiResult?.predictions?.filter(p => p.riskLevel !== 'Low').length || 0, unit: 'Active', icon: '⚠️', highlight: true }
                         ].map((stat, i) => (
-                            <div key={i} className={`relative group overflow-hidden bg-white/5 border border-white/10 rounded-2xl p-5 backdrop-blur-md hover:bg-white/10 transition-all duration-300 ${stat.highlight && typeof stat.value === 'number' && stat.value > 0 ? 'animate-neon-pulse shadow-[0_0_15px_rgba(255,0,110,0.2)]' : ''}`}>
+                            <div key={i} className={`relative group overflow-hidden glass-card p-5 hover:bg-[var(--accent-primary)]/5 transition-all duration-300 ${stat.highlight && typeof stat.value === 'number' && stat.value > 0 ? 'neon-pulse' : ''}`}>
                                 <div className="absolute top-0 right-0 p-2 opacity-10 group-hover:opacity-30 transition-opacity">
                                     <span className="text-4xl">{stat.icon}</span>
                                 </div>
                                 <div className="relative z-10">
                                     <div className="flex items-center justify-between mb-3">
                                         <span className="text-slate-500 text-[10px] uppercase font-bold tracking-[0.2em]">{stat.label}</span>
-                                        <div className={`w-1.5 h-1.5 rounded-full bg-${stat.glowColor} ${stat.highlight ? 'animate-pulse' : ''}`} />
+                                        <div className={`w-1.5 h-1.5 rounded-full bg-[var(--accent-primary)] ${stat.highlight ? 'animate-pulse shadow-[0_0_8px_var(--accent-primary)]' : ''}`} />
                                     </div>
                                     <div className="flex items-baseline gap-2">
                                         <span className={`text-3xl font-bold tracking-tight font-['Space_Grotesk'] ${stat.highlight && typeof stat.value === 'number' && stat.value > 0 ? 'text-pulse-400' : 'text-white'}`}>
@@ -925,84 +1023,80 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
 
             {/* --- MODALS (Reused) --- */}
             {/* Booking Modal */}
-            <AnimatePresence>
-                {showBookingModal && (
-                    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-lg p-8 border border-slate-100 dark:border-slate-800">
-                            <h3 className="text-2xl font-bold mb-6 text-slate-800 dark:text-white">Book Appointment</h3>
-                            <div className="space-y-5">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Specialist</label>
-                                    <select className="w-full p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500" value={selectedDoctorId} onChange={e => setSelectedDoctorId(e.target.value)}>
-                                        <option value="">Select Doctor</option>
-                                        {doctors.map(d => <option key={d.id} value={d.id}>{d.name} ({d.specialization})</option>)}
-                                    </select>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Date</label>
-                                    <input type="date" className="w-full p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500" value={bookingDate} onChange={e => setBookingDate(e.target.value)} />
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Consultation Type</label>
-                                    <select className="w-full p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500" value={bookingType} onChange={e => setBookingType(e.target.value)}>
-                                        <option value="Video Consultation">Video Consultation</option>
-                                        <option value="In-Person Consultation">In-Person Consultation</option>
-                                    </select>
-                                </div>
-
-                                {availableSlots.length > 0 && (
-                                    <div>
-                                        <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Available Slots</label>
-                                        <div className="grid grid-cols-4 gap-2">
-                                            {availableSlots.map(slot => (
-                                                <button key={slot.id} disabled={slot.isBlocked || slot.bookedCount >= slot.maxPatients} onClick={() => setSelectedSlotId(slot.id)} className={`p-2 rounded-lg text-sm font-bold border transition-colors ${selectedSlotId === slot.id ? 'bg-rose-600 text-white border-rose-600 shadow-md' : 'border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/10'}`}>
-                                                    {slot.startTime}
-                                                </button>
-                                            ))}
-                                        </div>
-                                    </div>
-                                )}
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Symptoms / Notes For Doctor</label>
-                                    <textarea
-                                        className="w-full p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500 min-h-[88px]"
-                                        value={bookingSymptoms}
-                                        onChange={(e) => setBookingSymptoms(e.target.value)}
-                                        placeholder="Describe symptoms and concerns for this visit"
-                                    />
-                                </div>
-                                <div className="pt-4 flex gap-3">
-                                    <Button className="flex-1" onClick={handleBookAppointment} disabled={!selectedSlotId} isLoading={bookingLoading}>Confirm Booking</Button>
-                                    <Button variant="ghost" className="flex-1" onClick={() => setShowBookingModal(false)}>Cancel</Button>
-                                </div>
+            {showBookingModal && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-lg p-8 border border-slate-100 dark:border-slate-800 transform transition-all">
+                        <h3 className="text-2xl font-bold mb-6 text-slate-800 dark:text-white">Book Appointment</h3>
+                        <div className="space-y-5">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Specialist</label>
+                                <select className="w-full p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500" value={selectedDoctorId} onChange={e => setSelectedDoctorId(e.target.value)}>
+                                    <option value="">Select Doctor</option>
+                                    {doctors.map(d => <option key={d.id} value={d.id}>{d.name} ({d.specialization})</option>)}
+                                </select>
                             </div>
-                        </motion.div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Date</label>
+                                <input type="date" className="w-full p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500" value={bookingDate} onChange={e => setBookingDate(e.target.value)} />
+                            </div>
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Consultation Type</label>
+                                <select className="w-full p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500" value={bookingType} onChange={e => setBookingType(e.target.value)}>
+                                    <option value="Video Consultation">Video Consultation</option>
+                                    <option value="In-Person Consultation">In-Person Consultation</option>
+                                </select>
+                            </div>
+
+                            {availableSlots.length > 0 && (
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Available Slots</label>
+                                    <div className="grid grid-cols-4 gap-2">
+                                        {availableSlots.map(slot => (
+                                            <button key={slot.id} disabled={slot.isBlocked || slot.bookedCount >= slot.maxPatients} onClick={() => setSelectedSlotId(slot.id)} className={`p-2 rounded-lg text-sm font-bold border transition-colors ${selectedSlotId === slot.id ? 'bg-rose-600 text-white border-rose-600 shadow-md' : 'border-slate-200 dark:border-slate-700 hover:border-rose-300 dark:hover:border-rose-700 hover:bg-rose-50 dark:hover:bg-rose-900/10'}`}>
+                                                {slot.startTime}
+                                            </button>
+                                        ))}
+                                    </div>
+                                </div>
+                            )}
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase mb-2">Symptoms / Notes For Doctor</label>
+                                <textarea
+                                    className="w-full p-3.5 border border-slate-200 dark:border-slate-700 rounded-xl bg-slate-50 dark:bg-slate-800 text-slate-800 dark:text-white outline-none focus:ring-2 focus:ring-rose-500 min-h-[88px]"
+                                    value={bookingSymptoms}
+                                    onChange={(e) => setBookingSymptoms(e.target.value)}
+                                    placeholder="Describe symptoms and concerns for this visit"
+                                />
+                            </div>
+                            <div className="pt-4 flex gap-3">
+                                <Button className="flex-1" onClick={handleBookAppointment} disabled={!selectedSlotId} isLoading={bookingLoading}>Confirm Booking</Button>
+                                <Button variant="ghost" className="flex-1" onClick={() => setShowBookingModal(false)}>Cancel</Button>
+                            </div>
+                        </div>
                     </div>
-                )}
-            </AnimatePresence>
+                </div>
+            )}
 
             {/* Emergency Contact Modal */}
-            <AnimatePresence>
-                {showContactModal && (
-                    <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
-                        <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} exit={{ opacity: 0 }} className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-md p-8 border border-slate-100 dark:border-slate-800">
-                            <div className="flex items-center gap-3 mb-6">
-                                <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-600 text-2xl">🆘</div>
-                                <h3 className="text-xl font-bold text-slate-800 dark:text-white">Emergency Contact</h3>
+            {showContactModal && (
+                <div className="fixed inset-0 z-[100] bg-slate-900/60 backdrop-blur-sm flex items-center justify-center p-4">
+                    <div className="bg-white dark:bg-slate-900 rounded-3xl shadow-2xl w-full max-w-md p-8 border border-slate-100 dark:border-slate-800 transform transition-all">
+                        <div className="flex items-center gap-3 mb-6">
+                            <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center text-red-600 text-2xl">🆘</div>
+                            <h3 className="text-xl font-bold text-slate-800 dark:text-white">Emergency Contact</h3>
+                        </div>
+                        <div className="space-y-4">
+                            <Input label="Contact Name" value={contactForm.name} onChange={e => setContactForm({ ...contactForm, name: e.target.value })} placeholder="e.g. Jane Doe" />
+                            <Input label="Relationship" value={contactForm.relationship} onChange={e => setContactForm({ ...contactForm, relationship: e.target.value })} placeholder="e.g. Spouse" />
+                            <Input label="Phone Number" value={contactForm.phone} onChange={e => setContactForm({ ...contactForm, phone: e.target.value })} placeholder="e.g. +1 555-0123" />
+                            <div className="pt-4 flex gap-3">
+                                <Button className="flex-1" onClick={handleSaveContact} isLoading={savingContact}>Save Contact</Button>
+                                <Button variant="ghost" className="flex-1" onClick={() => setShowContactModal(false)}>Cancel</Button>
                             </div>
-                            <div className="space-y-4">
-                                <Input label="Contact Name" value={contactForm.name} onChange={e => setContactForm({ ...contactForm, name: e.target.value })} placeholder="e.g. Jane Doe" />
-                                <Input label="Relationship" value={contactForm.relationship} onChange={e => setContactForm({ ...contactForm, relationship: e.target.value })} placeholder="e.g. Spouse" />
-                                <Input label="Phone Number" value={contactForm.phone} onChange={e => setContactForm({ ...contactForm, phone: e.target.value })} placeholder="e.g. +1 555-0123" />
-                                <div className="pt-4 flex gap-3">
-                                    <Button className="flex-1" onClick={handleSaveContact} isLoading={savingContact}>Save Contact</Button>
-                                    <Button variant="ghost" className="flex-1" onClick={() => setShowContactModal(false)}>Cancel</Button>
-                                </div>
-                            </div>
-                        </motion.div>
+                        </div>
                     </div>
-                )}
-            </AnimatePresence>
+                </div>
+            )}
 
             {/* Passport Modal */}
             {
@@ -1014,7 +1108,8 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
             }
 
             {/* Assistants */}
-            <MedicalChatbot />
+
+
             {activeVideoCall && (
                 <Suspense fallback={<div className="fixed inset-0 z-[120] bg-slate-950/70 backdrop-blur-sm" />}>
                     <LazyVideoCall
@@ -1026,6 +1121,9 @@ export const PatientDashboard: React.FC<Props> = ({ user }) => {
                 </Suspense>
             )}
             {activeChatAppt && <ChatSystem currentUserId={user.id} currentUserRole={UserRole.PATIENT} appointmentId={activeChatAppt.id} otherUserId={activeChatAppt.doctorId} otherUserName={activeChatAppt.doctorName} onClose={() => setActiveChatAppt(null)} />}
+
+            {/* Automation AI Assistant */}
+            <AutomationAssistant onAction={handleAssistantAction} />
         </motion.div >
     );
 };
