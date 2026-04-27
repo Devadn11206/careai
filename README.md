@@ -5,10 +5,11 @@ CareXAI is a real-time telehealth platform that connects patients, doctors, and 
 ## What’s New / Recent Updates
 
 - **Realtime backend is live**: Express + Socket.IO + Prisma (SQLite) powering auth, appointments, chat, schedules/slots, and queue updates.
-- **Local ML risk scoring**: `/ai/health-risk` calls a Python CLI expected at `../handrecognition/ml_risk_cli.py` (diabetes/heart/hypertension).
-- **Telechat with translation**: the Telechat panel can translate messages via Gemini using `VITE_GEMINI_API_KEY`.
-- **Owner admin bootstrap**: backend auto-ensures a single “owner admin” via `OWNER_ADMIN_EMAIL` / `OWNER_ADMIN_PASSWORD`.
+- **Universal AI Automation Assistant**: Groq-powered role-aware AI Copilot integrated across Patient, Doctor, and Admin dashboards for hands-free task execution.
+- **Role-Aware AI Backend**: `/ai/command` endpoint detects user roles and provides specific tools (booking, clinical records, user verification, etc.).
+- **Multilingual Voice Interaction**: Voice-to-action and action-to-speech support for English, Hindi, Telugu, and Tamil.
 - **Windows convenience scripts**: `start-frontend.ps1` and `server/start-backend.ps1` run dev servers quickly.
+
 
 ---
 
@@ -71,10 +72,16 @@ Traditional healthcare systems often suffer from:
    - Tokens generated securely on the backend.
    - Integrated into the appointment workflow.
 
-- **AI medical assistant**
-   - Gemini-powered chatbot for symptom queries and guidance (currently called from the frontend for demo/prototyping).
-   - Document upload (e.g., lab reports) with AI-powered extraction and risk analysis.
-   - Health passport with key metrics and AI insights.
+- **Universal AI Automation Assistant (AI Copilot)**
+   - Groq-powered assistant for voice and text-based task execution.
+   - **Role-Aware Logic**: Different capabilities for Patients, Doctors, and Admins.
+   - **Patient Tools**: Book/cancel appointments, trigger emergency alerts, analyze health metrics, generate health passports.
+   - **Doctor Tools**: Select patients, open schedules, analyze clinical trends, refresh real-time data.
+   - **Admin Tools**: Verify/reject doctors, block/unblock users, navigate system nodes, broadcast notifications.
+   - **Multilingual TTS**: Integrated text-to-speech with script detection for Indian languages.
+- **Document upload** (e.g., lab reports) with AI-powered extraction and risk analysis.
+- **Health passport** with key metrics and AI insights.
+
 
 - **Medication reminders (prototype)**
    - Patient & doctor UI for medication lists, dose schedules, adherence, and missed-dose alerts.
@@ -250,12 +257,22 @@ careai/
 3. Frontend joins the Agora channel with `appId`, `channelName`, `token`, and `uid`.
 4. When both participants join, their audio/video streams connect in real time.
 
-### AI Assistant
+### AI Automation Assistant (AI Copilot)
 
-1. User opens the AI chatbot or uploads a document.
-2. For Gemini features (chat, report extraction, translation), the frontend calls Gemini directly using `VITE_GEMINI_API_KEY`.
-3. For local ML risk scoring, the frontend calls `POST /ai/health-risk`, and the backend runs the Python models in `../handrecognition/ml_risk_cli.py`.
-4. Results are returned and displayed in the UI.
+1. **User Interaction**: User clicks the ✨ icon or uses the keyboard to type/speak a command.
+2. **Transcription**: If using voice, the frontend captures audio and sends it to `POST /ai/command`.
+3. **Backend Processing**:
+   - Backend uses **Whisper (via Groq)** to transcribe audio if needed.
+   - Backend identifies the user's role (Patient/Doctor/Admin) and configures a specific **System Prompt** and **Tool Set**.
+   - **Groq (Llama 3)** analyzes the intent and decides whether to trigger a **Function Call (Tool)**.
+4. **Action Execution**:
+   - If a tool is called (e.g., `book_appointment`), the backend updates the database and returns a `ClientAction`.
+   - The AI generates a conversational response in the user's detected language.
+5. **Frontend Reaction**:
+   - The frontend receives the response text and the `actions` array.
+   - Text is spoken using the **Multilingual TTS** engine.
+   - Dashboard reacts to actions (e.g., opens a modal, scrolls to a section, navigates to a tab).
+
 
 ---
 
