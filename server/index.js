@@ -32,8 +32,10 @@ const parseAllowedOrigins = (rawValue) => {
 };
 
 const ALLOWED_ORIGINS = parseAllowedOrigins(process.env.ALLOWED_ORIGINS);
+const DEV_LOCAL_ORIGIN_REGEX = /^https?:\/\/(localhost|127\.0\.0\.1)(:\d+)?$/i;
 const isOriginAllowed = (origin) => {
   if (!origin) return true;
+  if (process.env.NODE_ENV !== 'production' && DEV_LOCAL_ORIGIN_REGEX.test(origin)) return true;
   if (ALLOWED_ORIGINS.length === 0) return true;
   return ALLOWED_ORIGINS.includes(origin);
 };
@@ -1265,7 +1267,7 @@ app.post('/medications', authMiddleware, async (req, res) => {
   }
 
   const { patientId, name, dosage, frequency, times, startDate, durationDays, instructions } = req.body;
-  
+
   const start = new Date(startDate || new Date());
   const end = new Date(start);
   end.setDate(end.getDate() + (durationDays || 7));
@@ -1867,12 +1869,73 @@ app.get('/patients/:patientId/ai-summaries', authMiddleware, async (req, res) =>
   return res.json(rows.map(shapeConsultationSummary));
 });
 
-// --- AI Automation Assistant via Groq ---// --- AI Automation Assistant via Groq ---
-app.post('/ai/command', authMiddleware, upload.single('audio'), async (req, res) => {
-  if (!GROQ_API_KEY) {
-    return res.status(500).json({ error: 'GROQ_API_KEY is not configured on the server' });
+const inferActionsFromText = (inputText, role) => {
+  const text = String(inputText || '').toLowerCase();
+  const actions = [];
+  const hasAny = (...terms) => terms.some((term) => text.includes(term));
+
+  if (hasAny('refresh', 'reload', 'sync')) {
+    actions.push({ type: 'REFRESH_DATA' });
   }
 
+  if (role === 'ADMIN') {
+    if (hasAny('user', 'users')) actions.push({ type: 'OPEN_USERS' });
+    if (hasAny('verification', 'verify', 'approve doctor')) actions.push({ type: 'OPEN_VERIFICATION' });
+    if (hasAny('appointment', 'schedule')) actions.push({ type: 'OPEN_APPOINTMENTS' });
+    if (hasAny('record', 'vault')) actions.push({ type: 'OPEN_RECORDS' });
+    if (hasAny('safety', 'alert')) actions.push({ type: 'OPEN_SAFETY' });
+    if (hasAny('broadcast', 'announce')) actions.push({ type: 'OPEN_BROADCAST' });
+    if (hasAny('analytics', 'intel')) actions.push({ type: 'OPEN_ANALYTICS' });
+    if (hasAny('settings', 'config')) actions.push({ type: 'OPEN_SETTINGS' });
+    if (hasAny('log', 'security logs', 'audit')) actions.push({ type: 'OPEN_LOGS' });
+    if (hasAny('overview', 'dashboard', 'command center', 'home')) actions.push({ type: 'NAVIGATE', target: 'OVERVIEW' });
+  } else if (role === 'DOCTOR') {
+    if (hasAny('patient', 'patients')) actions.push({ type: 'OPEN_PATIENTS' });
+    if (hasAny('schedule', 'slots', 'calendar', 'appointment', 'book')) actions.push({ type: 'OPEN_SCHEDULE' });
+    if (hasAny('analytics', 'insight')) actions.push({ type: 'OPEN_ANALYTICS' });
+    if (hasAny('settings', 'config')) actions.push({ type: 'OPEN_SETTINGS' });
+    if (hasAny('dashboard', 'overview', 'home')) actions.push({ type: 'OPEN_DASHBOARD' });
+  } else if (role === 'PATIENT') {
+    if (hasAny('book', 'appointment')) actions.push({ type: 'OPEN_MODAL', target: 'booking_modal' });
+    if (hasAny('emergency', 'panic', 'help')) actions.push({ type: 'OPEN_MODAL', target: 'emergency_modal' });
+    if (hasAny('passport')) actions.push({ type: 'GENERATE_PASSPORT' });
+    if (hasAny('analyze', 'analysis', 'health check', 'risk')) actions.push({ type: 'ANALYZE_HEALTH' });
+    if (hasAny('chat', 'message')) actions.push({ type: 'OPEN_CHAT' });
+    if (hasAny('video', 'call')) actions.push({ type: 'START_VIDEO_CALL' });
+  }
+
+  const seen = new Set();
+  return actions.filter((action) => {
+    const key = `${action.type}|${action.target || ''}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+};
+
+const buildFallbackAssistantText = (actions, role) => {
+  if (!actions || actions.length === 0) {
+    if (role === 'ADMIN') return 'I heard you. Please tell me which admin section to open, like users, verification, or analytics.';
+    if (role === 'DOCTOR') return 'I heard you. Please tell me whether to open patients, schedule, analytics, or dashboard.';
+    return 'I heard you. Please tell me if you want booking, emergency, health analysis, passport, chat, or video call.';
+  }
+
+  if (actions.some((a) => a.type === 'REFRESH_DATA')) return 'Done. I refreshed the data.';
+  if (actions.some((a) => a.type === 'OPEN_USERS' || a.type === 'OPEN_PATIENTS')) return 'Done. Opening users now.';
+  if (actions.some((a) => a.type === 'OPEN_VERIFICATION')) return 'Done. Opening verification now.';
+  if (actions.some((a) => a.type === 'OPEN_APPOINTMENTS' || a.type === 'OPEN_SCHEDULE' || a.type === 'OPEN_BOOKING' || a.type === 'OPEN_APPOINTMENT')) return 'Done. Opening schedule now.';
+  if (actions.some((a) => a.type === 'OPEN_ANALYTICS')) return 'Done. Opening analytics now.';
+  if (actions.some((a) => a.type === 'OPEN_SETTINGS')) return 'Done. Opening settings now.';
+  if (actions.some((a) => a.type === 'OPEN_MODAL' && a.target === 'booking_modal')) return 'Done. Opening appointment booking now.';
+  if (actions.some((a) => a.type === 'OPEN_MODAL' && a.target === 'emergency_modal')) return 'Done. Opening emergency alert now.';
+  if (actions.some((a) => a.type === 'ANALYZE_HEALTH')) return 'Done. Starting your health analysis now.';
+  if (actions.some((a) => a.type === 'GENERATE_PASSPORT')) return 'Done. Generating your health passport now.';
+
+  return 'Done. I am handling that for you now.';
+};
+
+// --- AI Automation Assistant via Groq ---// --- AI Automation Assistant via Groq ---
+app.post('/ai/command', authMiddleware, upload.single('audio'), async (req, res) => {
   const { role, name } = req.user;
 
   try {
@@ -1880,13 +1943,22 @@ app.post('/ai/command', authMiddleware, upload.single('audio'), async (req, res)
 
     // If an audio file was uploaded, use Whisper to transcribe it
     if (req.file) {
+      if (!GROQ_API_KEY) {
+        return res.json({
+          transcription: '',
+          response: 'Voice input is unavailable right now. Please type your command.',
+          language: 'en',
+          actions: []
+        });
+      }
+
       const formData = new FormData();
       formData.append('file', req.file.buffer, {
         filename: 'audio.webm',
         contentType: req.file.mimetype || 'audio/webm',
       });
       formData.append('model', 'whisper-large-v3-turbo');
-      
+
       const transcribeRes = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
         headers: {
@@ -1905,9 +1977,19 @@ app.post('/ai/command', authMiddleware, upload.single('audio'), async (req, res)
     }
 
     if (!transcribedText || transcribedText.trim() === '') {
-      return res.json({ 
-        transcription: '', 
-        response: 'I couldn’t understand that clearly. Could you please repeat?' 
+      return res.json({
+        transcription: '',
+        response: 'I couldn’t understand that clearly. Could you please repeat?'
+      });
+    }
+
+    if (!GROQ_API_KEY) {
+      const fallbackActions = inferActionsFromText(transcribedText, role);
+      return res.json({
+        transcription: transcribedText,
+        response: buildFallbackAssistantText(fallbackActions, role),
+        language: 'en',
+        actions: fallbackActions,
       });
     }
 
@@ -2093,7 +2175,15 @@ DO NOT use a tool if you are missing required information.`;
       body: JSON.stringify({ model: GROQ_MODEL, messages, tools, tool_choice: "auto", temperature: 0.3, max_tokens: 256 }),
     });
 
-    if (!chatRes.ok) return res.json({ transcription: transcribedText, response: 'There seems to be a small issue. Please try again.' });
+    if (!chatRes.ok) {
+      const fallbackActions = inferActionsFromText(transcribedText, role);
+      return res.json({
+        transcription: transcribedText,
+        response: buildFallbackAssistantText(fallbackActions, role),
+        language: 'en',
+        actions: fallbackActions,
+      });
+    }
 
     let chatData = await chatRes.json();
     let responseMessage = chatData.choices?.[0]?.message;
@@ -2102,74 +2192,74 @@ DO NOT use a tool if you are missing required information.`;
     // Process Tool Calls
     if (responseMessage?.tool_calls?.length > 0) {
       messages.push(responseMessage);
-      
+
       for (const toolCall of responseMessage.tool_calls) {
         const functionName = toolCall.function.name;
         const args = toolCall.function.arguments ? JSON.parse(toolCall.function.arguments) : {};
         let functionResponse = "";
 
         if (functionName === "book_appointment") {
-           let dId = null;
-           const anyDoc = await prisma.user.findFirst({ where: { role: 'DOCTOR' } });
-           if (anyDoc) dId = anyDoc.id;
-           if (dId && args.date && args.time) {
-               try {
-                 let finalDate = args.date;
-                 if (/\d{2}\/\d{2}\/\d{4}/.test(finalDate)) {
-                    const [d, m, y] = finalDate.split('/');
-                    finalDate = `${y}-${m}-${d}`;
-                 }
-                 const parsedDate = new Date(`${finalDate}T${args.time}:00.000Z`);
-                 await prisma.appointment.create({
-                   data: {
-                     date: parsedDate,
-                     time: args.time,
-                     status: 'UPCOMING',
-                     doctorId: dId,
-                     patientId: req.user.id
-                   }
-                 });
-                 clientActions.push({ type: 'REFRESH_DATA' });
-                 functionResponse = "Appointment booked.";
-               } catch(e) { functionResponse = "Booking failed."; }
-           }
+          let dId = null;
+          const anyDoc = await prisma.user.findFirst({ where: { role: 'DOCTOR' } });
+          if (anyDoc) dId = anyDoc.id;
+          if (dId && args.date && args.time) {
+            try {
+              let finalDate = args.date;
+              if (/\d{2}\/\d{2}\/\d{4}/.test(finalDate)) {
+                const [d, m, y] = finalDate.split('/');
+                finalDate = `${y}-${m}-${d}`;
+              }
+              const parsedDate = new Date(`${finalDate}T${args.time}:00.000Z`);
+              await prisma.appointment.create({
+                data: {
+                  date: parsedDate,
+                  time: args.time,
+                  status: 'UPCOMING',
+                  doctorId: dId,
+                  patientId: req.user.id
+                }
+              });
+              clientActions.push({ type: 'REFRESH_DATA' });
+              functionResponse = "Appointment booked.";
+            } catch (e) { functionResponse = "Booking failed."; }
+          }
         } else if (functionName === "cancel_appointment") {
-           const appt = await prisma.appointment.findFirst({
-             where: { patientId: req.user.id, status: 'UPCOMING' },
-             orderBy: { date: 'asc' }
-           });
-           if (appt) {
-             await prisma.appointment.update({ where: { id: appt.id }, data: { status: 'CANCELLED' }});
-             clientActions.push({ type: 'REFRESH_DATA' });
-             functionResponse = "Appointment cancelled.";
-           }
+          const appt = await prisma.appointment.findFirst({
+            where: { patientId: req.user.id, status: 'UPCOMING' },
+            orderBy: { date: 'asc' }
+          });
+          if (appt) {
+            await prisma.appointment.update({ where: { id: appt.id }, data: { status: 'CANCELLED' } });
+            clientActions.push({ type: 'REFRESH_DATA' });
+            functionResponse = "Appointment cancelled.";
+          }
         } else if (functionName === "trigger_emergency_alert") {
-           clientActions.push({ type: 'OPEN_MODAL', target: 'emergency_modal' });
-           functionResponse = "Emergency modal opened.";
+          clientActions.push({ type: 'OPEN_MODAL', target: 'emergency_modal' });
+          functionResponse = "Emergency modal opened.";
         } else if (functionName === "analyze_health") {
-           clientActions.push({ type: 'ANALYZE_HEALTH' });
-           functionResponse = "Analysis triggered.";
+          clientActions.push({ type: 'ANALYZE_HEALTH' });
+          functionResponse = "Analysis triggered.";
         } else if (functionName === "generate_passport") {
-           clientActions.push({ type: 'GENERATE_PASSPORT' });
-           functionResponse = "Passport generated.";
+          clientActions.push({ type: 'GENERATE_PASSPORT' });
+          functionResponse = "Passport generated.";
         } else if (functionName === "ui_action") {
-           clientActions.push({ type: args.actionType, target: args.target });
-           functionResponse = `UI action ${args.actionType} on ${args.target} performed.`;
+          clientActions.push({ type: args.actionType, target: args.target });
+          functionResponse = `UI action ${args.actionType} on ${args.target} performed.`;
         } else if (functionName === "refresh_data") {
-           clientActions.push({ type: 'REFRESH_DATA' });
-           functionResponse = "Data refreshed.";
+          clientActions.push({ type: 'REFRESH_DATA' });
+          functionResponse = "Data refreshed.";
         } else if (functionName === "select_patient") {
-           clientActions.push({ type: 'SELECT_PATIENT', target: args.patientName });
-           functionResponse = `Patient ${args.patientName} selected.`;
+          clientActions.push({ type: 'SELECT_PATIENT', target: args.patientName });
+          functionResponse = `Patient ${args.patientName} selected.`;
         } else if (functionName === "open_schedule") {
-           clientActions.push({ type: 'OPEN_SCHEDULE' });
-           functionResponse = "Schedule opened.";
+          clientActions.push({ type: 'OPEN_SCHEDULE' });
+          functionResponse = "Schedule opened.";
         } else if (functionName === "verify_doctor") {
-           clientActions.push({ type: 'VERIFY_DOCTOR', payload: { doctorId: args.doctorId } });
-           functionResponse = `Doctor ${args.doctorId} verified.`;
+          clientActions.push({ type: 'VERIFY_DOCTOR', payload: { doctorId: args.doctorId } });
+          functionResponse = `Doctor ${args.doctorId} verified.`;
         } else if (functionName === "block_user") {
-           clientActions.push({ type: 'BLOCK_USER', payload: { userId: args.userId } });
-           functionResponse = `User ${args.userId} blocked.`;
+          clientActions.push({ type: 'BLOCK_USER', payload: { userId: args.userId } });
+          functionResponse = `User ${args.userId} blocked.`;
         }
 
         messages.push({ tool_call_id: toolCall.id, role: "tool", name: functionName, content: functionResponse });
@@ -2180,14 +2270,29 @@ DO NOT use a tool if you are missing required information.`;
         headers: { Authorization: `Bearer ${GROQ_API_KEY}`, 'Content-Type': 'application/json' },
         body: JSON.stringify({ model: GROQ_MODEL, messages, temperature: 0.3, max_tokens: 256 }),
       });
-      if (!chatRes.ok) return res.json({ transcription: transcribedText, response: 'There seems to be a small issue.' });
+      if (!chatRes.ok) {
+        const fallbackActions = inferActionsFromText(transcribedText, role);
+        return res.json({
+          transcription: transcribedText,
+          response: buildFallbackAssistantText(fallbackActions, role),
+          language: 'en',
+          actions: fallbackActions,
+        });
+      }
       chatData = await chatRes.json();
       responseMessage = chatData.choices?.[0]?.message;
     }
 
     let aiResponse = responseMessage?.content || 'I processed that for you.';
     aiResponse = aiResponse.replace(/<function=.*?>.*?<\/function>/gs, '').trim();
-    
+
+    if (clientActions.length === 0) {
+      clientActions = inferActionsFromText(transcribedText, role);
+    }
+    if (!aiResponse) {
+      aiResponse = buildFallbackAssistantText(clientActions, role);
+    }
+
     let detectedLang = 'en';
     if (/[\u0C00-\u0C7F]/.test(aiResponse)) detectedLang = 'te';
     else if (/[\u0900-\u097F]/.test(aiResponse)) detectedLang = 'hi';
@@ -2201,7 +2306,13 @@ DO NOT use a tool if you are missing required information.`;
     });
   } catch (error) {
     console.error('AI command error:', error);
-    res.json({ transcription: '', response: 'There seems to be a small issue.' });
+    const fallbackActions = inferActionsFromText(req.body?.text || '', role);
+    res.json({
+      transcription: req.body?.text || '',
+      response: buildFallbackAssistantText(fallbackActions, role),
+      language: 'en',
+      actions: fallbackActions,
+    });
   }
 });
 
@@ -2325,7 +2436,7 @@ app.post('/agora-token', authMiddleware, async (req, res) => {
     } else {
       console.log('Agora certificate missing. Returning null token for testing mode.');
     }
-    
+
     res.json({ token });
   } catch (err) {
     console.error('Error generating Agora token:', err);

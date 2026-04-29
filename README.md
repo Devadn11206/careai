@@ -124,9 +124,6 @@ Traditional healthcare systems often suffer from:
 - **Socket.IO Client** (real-time events)
 - **UI libraries**: Tailwind-style utility classes / custom components
 - **PWA**: `vite-plugin-pwa` + generated icons via `@vite-pwa/assets-generator`
-- **Mobile options**:
-   - **Capacitor** (Android wrapper dependencies included)
-   - **Flutter** WebView wrapper (see `pubspec.yaml`)
 
 ### Backend
 
@@ -187,23 +184,22 @@ A simplified folder layout:
 
 ```bash
 careai/
-├─ App.tsx                 # Root React component
-├─ index.tsx               # React entry point
-├─ vite.config.ts          # Vite configuration
-├─ types.ts                # Shared TypeScript types
-├─ components/             # Reusable UI & feature components
-├─ pages/                  # Login + role dashboards
-├─ services/               # API client, Gemini integration, utilities
-├─ server/                 # Backend API + realtime server (Express + Socket.IO + Prisma)
-│  ├─ index.js             # Server entry
-│  ├─ prisma/              # Prisma schema + migrations (SQLite)
-│  └─ README.md            # Backend-specific docs
-├─ android/                # Flutter wrapper (Android)
-├─ ios/                    # Flutter wrapper (iOS)
-├─ lib/                    # Flutter wrapper Dart entry
-├─ public/                 # Static assets
-├─ start-frontend.ps1      # Windows dev shortcut
-└─ README.md               # This file
+├─ src/
+│  ├─ components/
+│  │  ├─ common/         # Layout, Header, Sidebar, Splash
+│  │  ├─ ui/             # Atomic components
+│  │  ├─ features/       # Functional modules (Telechat, Risk Prediction)
+│  │  └─ visuals/        # 3D assets (Three.js/Fiber)
+│  ├─ pages/              # Dashboards, Login, Landing
+│  ├─ services/           # API client, Gemini, HealthContext
+│  ├─ types/              # Unified TypeScript definitions
+│  ├─ App.tsx             # Root React component
+│  └─ index.tsx           # React entry point
+├─ server/               # Backend API + realtime server
+├─ public/               # Static assets
+├─ vite.config.ts        # Vite + PWA configuration
+├─ index.html            # Entry HTML
+└─ README.md             # This file
 ```
 
 > Optional local ML: the backend route `POST /ai/health-risk` expects a sibling folder `../handrecognition/` containing `ml_risk_cli.py` (see [server/index.js](server/index.js) and [server/README.md](server/README.md)). If you don’t have that folder, the rest of the app still runs; only that endpoint will fail.

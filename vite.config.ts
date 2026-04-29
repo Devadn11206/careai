@@ -19,8 +19,8 @@ export default defineConfig(({ mode }) => {
           name: 'CareXAI',
           short_name: 'CareXAI',
           description: 'Real-time AI-powered telehealth platform',
-          theme_color: '#e11d48',
-          background_color: '#ffffff',
+          theme_color: '#00D4FF',
+          background_color: '#050A14',
           start_url: '/',
           scope: '/',
           display: 'standalone',
@@ -94,7 +94,7 @@ export default defineConfig(({ mode }) => {
     },
     resolve: {
       alias: {
-        '@': path.resolve(__dirname, '.'),
+        '@': path.resolve(__dirname, './src'),
       }
     }
   };
