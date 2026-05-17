@@ -15,9 +15,11 @@ enum UserRole {
 }
 
 enum DoctorStatus {
-  PENDING
+  PENDING_VERIFICATION
+  UNDER_REVIEW
   VERIFIED
   REJECTED
+  SUSPENDED
 }
 
 enum AppointmentStatus {
@@ -50,6 +52,9 @@ model User {
   passwordHash String
   role         UserRole
   profilePicUrl String?
+  phone         String?
+  age           Int?
+  gender        String?
 
   // Optional doctor-specific metadata (used when role == DOCTOR)
   specialization     String?
@@ -60,7 +65,10 @@ model User {
   verificationDocumentUrl  String?
   verificationDocumentName String?
   rating             Float?        @default(4.8)
-  doctorStatus       DoctorStatus? @default(VERIFIED)
+  doctorStatus       DoctorStatus? @default(PENDING_VERIFICATION)
+  about              String?
+  hospital           String?
+  consultationFee    Float?
 
   patientAppointments Appointment[] @relation("PatientAppointments")
   doctorAppointments  Appointment[] @relation("DoctorAppointments")
@@ -80,6 +88,20 @@ model User {
   medicationAdherence        MedicationAdherence[]      @relation("PatientMedicationAdherence")
   medicationAlertsAsDoctor   MedicationMissedDoseAlert[] @relation("DoctorMedicationAlerts")
   medicationAlertsAsPatient  MedicationMissedDoseAlert[] @relation("PatientMedicationAlerts")
+  alertsAsPatient            Alert[]                     @relation("PatientAlerts")
+  alertsAsDoctor             Alert[]                     @relation("DoctorTargetedAlerts")
+  aiInsights                 AiInsight[]                 @relation("PatientAiInsights")
+  patientPrescriptions       Prescription[]              @relation("PatientPrescriptions")
+  doctorPrescriptions        Prescription[]              @relation("DoctorPrescriptions")
+  medicalRecords             MedicalRecord[]             @relation("PatientMedicalRecords")
+  grantedAccessTo            DoctorAccessPermission[]    @relation("PatientGrantedAccess")
+  doctorAccesses             DoctorAccessPermission[]    @relation("DoctorAccessPermissions")
+  
+  // Verification relations
+  doctorDocuments            DoctorDocument[]            @relation("DoctorDocumentRelation")
+  doctorVerificationLogs     DoctorVerificationLog[]     @relation("DoctorLogRelation")
+  adminReviewsPerformed      AdminReview[]               @relation("AdminReviewRelation")
+  doctorAffiliations         HospitalAffiliation[]       @relation("DoctorAffiliations")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -176,6 +198,7 @@ model Appointment {
 
   chatMessages ChatMessage[] @relation("AppointmentMessages")
   consultationSummaries ConsultationSummary[] @relation("AppointmentConsultationSummaries")
+  prescriptions Prescription[] @relation("AppointmentPrescriptions")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -217,13 +240,16 @@ model ChatMessage {
   senderId         String      @map("sender_id")
   receiver         User        @relation("MessageReceiver", fields: [receiverId], references: [id])
   receiverId       String      @map("receiver_id")
-  senderRole       UserRole
+  
   content          String      @map("message_text")
+  messageType      String      @default("TEXT") // TEXT, IMAGE, PDF, PRESCRIPTION, VOICE, SUMMARY
   attachmentUrl    String?     @map("attachment_url")
+  attachmentName   String?
   attachmentType   String?
-  encryptionKeyRef String?     @map("encryption_key_reference")
+  
   isRead           Boolean     @default(false)
-
+  isDelivered      Boolean     @default(false)
+  
   createdAt DateTime @default(now()) @map("timestamp")
 
   @@index([appointmentId, createdAt])
@@ -253,4 +279,334 @@ model ConsultationSummary {
 
   @@index([doctorId, patientId, createdAt])
   @@index([appointmentId, createdAt])
+}
+
+enum AlertSeverity {
+  CRITICAL
+  HIGH
+  MEDIUM
+  LOW
+  INFO
+}
+
+enum AlertStatus {
+  NEW
+  ACKNOWLEDGED
+  RESOLVED
+}
+
+model Alert {
+  id        String        @id @default(cuid())
+  patient   User          @relation("PatientAlerts", fields: [patientId], references: [id])
+  patientId String
+  
+  // Doctors can be targeted or it can be a general broadcast
+  doctor    User?         @relation("DoctorTargetedAlerts", fields: [doctorId], references: [id])
+  doctorId  String?
+  
+  type      String        // e.g., 'ML_RISK', 'VITALS', 'EMERGENCY'
+  severity  AlertSeverity
+  message   String
+  status    AlertStatus   @default(NEW)
+  
+  createdAt DateTime      @default(now())
+  
+  @@index([patientId, createdAt])
+  @@index([doctorId, status, createdAt])
+}
+
+model AiInsight {
+  id              String   @id @default(cuid())
+  patient         User     @relation("PatientAiInsights", fields: [patientId], references: [id])
+  patientId       String
+  heartRate       Int
+  bloodPressure   String
+  glucose         Int
+  aiWellnessScore Int
+  recoveryScore   Int      @default(85)
+  summary         String   @default("Heart rate variability remains optimal for recovery. Glucose levels stabilized after last recorded meal.")
+  confidence      Float
+  diabetesRisk    Int      @default(0)
+  hypertensionRisk Int      @default(0)
+  heartDiseaseRisk Int      @default(0)
+  timestamp       DateTime @default(now())
+
+  @@index([patientId, timestamp])
+}
+
+model Prescription {
+  id              String   @id @default(cuid())
+  patient         User     @relation("PatientPrescriptions", fields: [patientId], references: [id])
+  patientId       String
+  doctor          User     @relation("DoctorPrescriptions", fields: [doctorId], references: [id])
+  doctorId        String
+  appointment     Appointment? @relation("AppointmentPrescriptions", fields: [appointmentId], references: [id])
+  appointmentId   String?
+
+  medicines       String   // JSON string of medicines
+  diagnosis       String?
+  notes           String?
+  fileUrl         String?
+  fileName        String?
+  aiExtractedJson String?  // Extracted data from AI
+  confidenceScore Float?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([patientId, createdAt])
+  @@index([doctorId, createdAt])
+}
+
+model MedicalRecord {
+  id          String   @id @default(cuid())
+  patient     User     @relation("PatientMedicalRecords", fields: [patientId], references: [id])
+  patientId   String
+  
+  type        String   // 'LAB_REPORT', 'SCAN', 'PRESCRIPTION', 'SUMMARY', 'ALLERGY', 'CHRONIC'
+  title       String
+  description String?
+  fileUrl     String
+  fileName    String
+  fileType    String   // 'pdf', 'image', 'docx'
+  
+  date        DateTime @default(now())
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([patientId, type])
+  @@index([patientId, createdAt])
+}
+
+enum AccessStatus {
+  PENDING
+  GRANTED
+  REVOKED
+  EXPIRED
+}
+
+enum AccessType {
+  ONE_TIME
+  APPOINTMENT_ONLY
+  PERMANENT
+}
+
+model DoctorAccessPermission {
+  id          String       @id @default(cuid())
+  patient     User         @relation("PatientGrantedAccess", fields: [patientId], references: [id])
+  patientId   String
+  doctor      User         @relation("DoctorAccessPermissions", fields: [doctorId], references: [id])
+  doctorId    String
+  
+  status      AccessStatus @default(PENDING)
+  accessType  AccessType   @default(APPOINTMENT_ONLY)
+  
+  expiresAt   DateTime?
+  grantedAt   DateTime?
+  
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@unique([patientId, doctorId])
+  @@index([doctorId, status])
+}
+model DoctorDocument {
+  id          String   @id @default(cuid())
+  doctor      User     @relation("DoctorDocumentRelation", fields: [doctorId], references: [id])
+  doctorId    String
+  
+  type        String   // 'LICENSE', 'CERTIFICATE', 'ID_PROOF', 'DEGREE', 'AFFILIATION'
+  title       String
+  fileUrl     String
+  fileName    String
+  fileType    String
+  
+  createdAt   DateTime @default(now())
+}
+
+model DoctorVerificationLog {
+  id          String   @id @default(cuid())
+  doctor      User     @relation("DoctorLogRelation", fields: [doctorId], references: [id])
+  doctorId    String
+  
+  oldStatus   DoctorStatus
+  newStatus   DoctorStatus
+  reason      String?
+  adminId     String?
+  
+  createdAt   DateTime @default(now())
+}
+
+model AdminReview {
+  id          String   @id @default(cuid())
+  admin       User     @relation("AdminReviewRelation", fields: [adminId], references: [id])
+  adminId     String
+  targetId    String   // Doctor ID
+  
+  comments    String?
+  decision    String   // 'APPROVED', 'REJECTED', 'DOCUMENTS_REQUESTED'
+  
+  createdAt   DateTime @default(now())
+}
+
+model Hospital {
+  id                String   @id @default(cuid())
+  name              String
+  type              String   // 'GOVERNMENT', 'PRIVATE', 'SPECIALTY'
+  description       String?
+  imageUrl          String?
+  emergencyStatus   Boolean  @default(true)
+  rating            Float    @default(4.5)
+  departments       String?  // JSON string
+  timings           String?
+  verified          Boolean  @default(false)
+  queueWaitTime     Int      @default(0) // in minutes
+  activePatients    Int      @default(0)
+  
+  location          HospitalLocation?
+  affiliations      HospitalAffiliation[]
+  facilities        HealthcareFacility[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+}
+
+model HospitalLocation {
+  id          String   @id @default(cuid())
+  hospital    Hospital @relation(fields: [hospitalId], references: [id])
+  hospitalId  String   @unique
+  
+  address     String
+  city        String
+  state       String?
+  country     String
+  latitude    Float
+  longitude   Float
+  
+  createdAt DateTime @default(now())
+}
+
+model HospitalAffiliation {
+  id          String   @id @default(cuid())
+  doctor      User     @relation("DoctorAffiliations", fields: [doctorId], references: [id])
+  doctorId    String
+  hospital    Hospital @relation(fields: [hospitalId], references: [id])
+  hospitalId  String
+  
+  status      String   // 'PENDING', 'VERIFIED', 'REVOKED'
+  department  String?
+  
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([doctorId, hospitalId])
+}
+
+model HealthcareFacility {
+  id          String   @id @default(cuid())
+  name        String
+  type        String   // 'PHARMACY', 'LAB', 'MRI_CENTER', 'XRAY_CENTER'
+  hospital    Hospital? @relation(fields: [hospitalId], references: [id])
+  hospitalId  String?
+  
+  address     String
+  latitude    Float
+  longitude   Float
+  
+  verified    Boolean  @default(true)
+  
+  createdAt DateTime @default(now())
+}
+
+model AuditLog {
+  id          String   @id @default(cuid())
+  userId      String?
+  action      String   // 'LOGIN', 'LOGOUT', 'CONSULTATION_START', 'PRESCRIPTION_GEN', 'AI_ACTION', 'RECORD_ACCESS', 'APPROVAL'
+  details     String?  // JSON or text
+  targetId    String?  // e.g., Patient ID or Doctor ID
+  targetName  String?
+  ipAddress   String?
+  timestamp   DateTime @default(now())
+  
+  @@index([userId, action])
+  @@index([timestamp])
+}
+
+model SupportTicket {
+  id          String   @id @default(cuid())
+  userId      String
+  role        UserRole
+  subject     String
+  message     String
+  status      String   @default("OPEN") // 'OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'
+  priority    String   @default("MEDIUM") // 'LOW', 'MEDIUM', 'HIGH', 'CRITICAL'
+  
+  response    String?
+  resolvedAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@index([userId, status])
+}
+
+model FraudAlert {
+  id          String   @id @default(cuid())
+  type        String   // 'SUSPICIOUS_LOGIN', 'FAKE_DOCTOR_CLAIM', 'PRESCRIPTION_ABUSE', 'SPAM'
+  severity    AlertSeverity
+  details     String
+  userId      String?
+  status      AlertStatus @default(NEW)
+  
+  createdAt   DateTime @default(now())
+  
+  @@index([type, status])
+}
+
+model SystemStatus {
+  id          String   @id @default(cuid())
+  service     String   // 'API', 'DATABASE', 'SOCKET', 'GROQ', 'MAPS', 'OCR'
+  status      String   // 'ONLINE', 'DEGRADED', 'OFFLINE'
+  latency     Int?     // in ms
+  lastChecked DateTime @default(now())
+  
+  @@index([service])
+}
+
+model Emergency {
+  id              String   @id @default(cuid())
+  patientId       String?
+  patientName     String?  // Fallback if not registered
+  type            String   // 'CARDIAC', 'TRAUMA', 'RESPIRATORY', 'STROKE', 'OTHER'
+  severity        AlertSeverity @default(CRITICAL)
+  status          String   @default("PENDING") // 'PENDING', 'RESPONDING', 'RESOLVED', 'CANCELLED'
+  
+  latitude        Float
+  longitude       Float
+  address         String?
+  
+  assignedHospitalId String?
+  assignedDoctorId   String?
+  assignedAmbulanceId String?
+
+  startTime       DateTime @default(now())
+  endTime         DateTime?
+  
+  @@index([status, severity])
+}
+
+model Ambulance {
+  id              String   @id @default(cuid())
+  plateNumber     String   @unique
+  driverName      String
+  driverPhone     String
+  status          String   @default("IDLE") // 'IDLE', 'RESPONDING', 'ON_SITE', 'EN_ROUTE_TO_HOSPITAL'
+  
+  latitude        Float
+  longitude       Float
+  
+  currentEmergencyId String?
+  
+  lastUpdated     DateTime @updatedAt
+  
+  @@index([status])
 }

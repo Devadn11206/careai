@@ -1,84 +1,141 @@
-import { motion } from "framer-motion";
-import { AlertTriangle, Bell, CheckCircle2, Info, X } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import { AlertTriangle, Bell, CheckCircle2, Info, X, ExternalLink } from "lucide-react";
 import { AppLayout } from "@/components/carex/AppLayout";
 import { GlassCard } from "@/components/carex/GlassCard";
 import { NeonButton } from "@/components/carex/NeonButton";
 import { useHealth } from "@/services/HealthContext";
+import { AlertStatus, AlertSeverity } from "@/types";
+import { toast } from "sonner";
 
 const config = {
-  critical: { ring: "border-destructive/40", bg: "bg-destructive/10", icon: "text-destructive", glow: "shadow-glow-destructive" },
-  warning: { ring: "border-warning/40", bg: "bg-warning/10", icon: "text-warning", glow: "" },
-  info: { ring: "border-primary/30", bg: "bg-primary/10", icon: "text-primary", glow: "" },
-  success: { ring: "border-success/40", bg: "bg-success/10", icon: "text-success", glow: "shadow-glow-success" },
+  CRITICAL: { ring: "border-destructive/40", bg: "bg-destructive/10", icon: "text-destructive", glow: "shadow-glow-destructive" },
+  HIGH: { ring: "border-warning/40", bg: "bg-warning/10", icon: "text-warning", glow: "" },
+  MEDIUM: { ring: "border-primary/30", bg: "bg-primary/10", icon: "text-primary", glow: "" },
+  LOW: { ring: "border-success/40", bg: "bg-success/10", icon: "text-success", glow: "" },
 };
 
 const Alerts = () => {
-  const { alerts, clearAlerts } = useHealth();
+  const { alerts, updateAlertStatus, clearAlerts, user } = useHealth();
   
-  const displayAlerts = alerts.length > 0 ? alerts.map((a, i) => ({
-    id: a.id,
-    severity: a.severity === 'CRITICAL' || a.severity === 'HIGH' ? 'critical' : 'info',
-    icon: a.severity === 'CRITICAL' || a.severity === 'HIGH' ? AlertTriangle : Bell,
-    title: a.severity === 'CRITICAL' || a.severity === 'HIGH' ? 'Critical Risk Alert' : 'Health Update',
-    desc: a.message,
-    time: new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-  })) : [
-    { id: 1, severity: "info", icon: Info, title: "Medication reminder", desc: "Atorvastatin 20mg scheduled at 21:00.", time: "Yesterday" }
-  ];
+  // Only show active alerts
+  const activeAlerts = alerts.filter(a => a.status === AlertStatus.NEW || a.status === AlertStatus.ACKNOWLEDGED);
+
+  const handleDismiss = (id: string) => {
+    updateAlertStatus(id, AlertStatus.DISMISSED);
+    toast.info("Alert dismissed across dashboards.");
+  };
+
+  const handleMarkAllRead = () => {
+    activeAlerts.forEach(a => updateAlertStatus(a.id, AlertStatus.ACKNOWLEDGED));
+    toast.success("All alerts marked as read.");
+  };
 
   return (
-    <AppLayout title="Alerts & Notifications" subtitle="Prioritized by AI severity scoring">
+    <AppLayout title="Neural Alert Center" subtitle="Real-time clinical event synchronization">
       <div className="flex items-center gap-2 mb-6">
-        {["All", "Critical", "Warnings", "Info"].map((tab, i) => (
-          <button
-            key={tab}
-            className={`glass rounded-full px-4 py-1.5 text-xs font-medium transition-all ${
-              i === 0 ? "bg-gradient-primary text-primary-foreground shadow-glow border-0" : "hover:border-primary/40"
-            }`}
-          >
-            {tab}
-          </button>
-        ))}
-        <NeonButton variant="ghost" size="sm" className="ml-auto" onClick={clearAlerts}>Mark all read</NeonButton>
+        <div className="flex bg-muted/30 p-1 rounded-full border border-border/50">
+          {["All", "Critical", "Warnings"].map((tab, i) => (
+            <button
+              key={tab}
+              className={`rounded-full px-5 py-1.5 text-xs font-bold transition-all ${
+                i === 0 ? "bg-primary text-primary-foreground shadow-glow" : "text-muted-foreground hover:text-foreground"
+              }`}
+            >
+              {tab}
+            </button>
+          ))}
+        </div>
+        <NeonButton 
+          variant="ghost" 
+          size="sm" 
+          className="ml-auto text-xs font-bold" 
+          onClick={handleMarkAllRead}
+          disabled={activeAlerts.length === 0}
+        >
+          Mark all read
+        </NeonButton>
       </div>
 
-      <div className="space-y-3">
-        {displayAlerts.map((a, i) => {
-          const c = config[a.severity as keyof typeof config];
-          return (
+      <div className="space-y-4">
+        <AnimatePresence mode="popLayout">
+          {activeAlerts.length > 0 ? (
+            activeAlerts.map((a, i) => {
+              const c = config[a.severity as keyof typeof config] || config.MEDIUM;
+              const Icon = a.severity === 'CRITICAL' ? AlertTriangle : Bell;
+              
+              return (
+                <motion.div
+                  key={a.id}
+                  initial={{ opacity: 0, y: 20 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, scale: 0.95 }}
+                  transition={{ duration: 0.2 }}
+                  layout
+                >
+                  <GlassCard className={`p-5 border-l-4 ${c.ring}`}>
+                    <div className="flex items-start gap-4">
+                      <div className={`h-12 w-12 rounded-2xl flex items-center justify-center ${c.bg} ${c.glow} shrink-0`}>
+                        <Icon className={`h-6 w-6 ${c.icon}`} />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="flex items-center gap-2">
+                            <h3 className="font-bold text-lg">{a.type}</h3>
+                            {a.status === AlertStatus.NEW && (
+                              <span className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+                            )}
+                          </div>
+                          <span className="text-xs text-muted-foreground font-mono bg-muted/50 px-2 py-1 rounded">
+                            {new Date(a.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
+                        </div>
+                        <p className="text-sm text-muted-foreground mt-2 leading-relaxed">
+                          {user?.role === 'DOCTOR' && a.patient?.name && (
+                            <span className="font-bold text-foreground">Patient {a.patient.name}: </span>
+                          )}
+                          {a.message}
+                        </p>
+                        <div className="flex gap-3 mt-4">
+                          <NeonButton size="sm" variant="neon" className="h-9 px-4">
+                            <ExternalLink className="h-3.5 w-3.5 mr-2" /> View Analysis
+                          </NeonButton>
+                          <NeonButton 
+                            size="sm" 
+                            variant="ghost" 
+                            className="h-9 px-4 border-border hover:bg-destructive/10 hover:text-destructive"
+                            onClick={() => handleDismiss(a.id)}
+                          >
+                            Dismiss
+                          </NeonButton>
+                        </div>
+                      </div>
+                      <button 
+                        onClick={() => handleDismiss(a.id)}
+                        className="text-muted-foreground hover:text-destructive transition-colors p-1"
+                      >
+                        <X className="h-5 w-5" />
+                      </button>
+                    </div>
+                  </GlassCard>
+                </motion.div>
+              );
+            })
+          ) : (
             <motion.div
-              key={a.id}
-              initial={{ opacity: 0, x: -20 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ delay: i * 0.07 }}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="text-center py-20 glass rounded-3xl border-dashed border-2 border-border/50"
             >
-              <GlassCard className={`p-5 border ${c.ring}`}>
-                <div className="flex items-start gap-4">
-                  <div className={`h-11 w-11 rounded-xl flex items-center justify-center ${c.bg} ${c.glow}`}>
-                    <a.icon className={`h-5 w-5 ${c.icon}`} />
-                  </div>
-                  <div className="flex-1 min-w-0">
-                    <div className="flex items-center justify-between gap-2 flex-wrap">
-                      <h3 className="font-semibold">{a.title}</h3>
-                      <span className="text-xs text-muted-foreground font-mono">{a.time}</span>
-                    </div>
-                    <p className="text-sm text-muted-foreground mt-1">{a.desc}</p>
-                    <div className="flex gap-2 mt-3">
-                      <NeonButton size="sm" variant="neon">View Details</NeonButton>
-                      <NeonButton size="sm" variant="ghost">Dismiss</NeonButton>
-                    </div>
-                  </div>
-                  <button className="text-muted-foreground hover:text-foreground transition-colors">
-                    <X className="h-4 w-4" />
-                  </button>
-                </div>
-              </GlassCard>
+              <CheckCircle2 className="h-16 w-16 text-success/20 mx-auto mb-4" />
+              <h3 className="text-xl font-bold text-muted-foreground">Neural Sky is Clear</h3>
+              <p className="text-sm text-muted-foreground mt-1">No active health alerts detected in this cycle.</p>
             </motion.div>
-          );
-        })}
+          )}
+        </AnimatePresence>
       </div>
     </AppLayout>
   );
 };
 
 export default Alerts;
+

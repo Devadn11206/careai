@@ -6,7 +6,7 @@ import { Area, AreaChart, ResponsiveContainer } from "recharts";
 
 interface VitalCardProps {
   label: string;
-  value: number;
+  value: number | string;
   unit: string;
   icon: LucideIcon;
   data: { v: number }[];
@@ -45,12 +45,18 @@ export const VitalCard = ({
           <div>
             <p className="text-xs text-muted-foreground uppercase tracking-wider">{label}</p>
             <div className="flex items-baseline gap-1 mt-1">
-              <AnimatedCounter
-                value={value}
-                decimals={decimals}
-                className="font-display text-2xl font-bold text-foreground"
-              />
-              <span className="text-xs text-muted-foreground">{unit}</span>
+              {typeof value === 'number' ? (
+                <AnimatedCounter
+                  value={value}
+                  decimals={decimals}
+                  className="font-display text-2xl font-bold text-foreground"
+                />
+              ) : (
+                <span className="font-display text-base font-bold text-muted-foreground/60 leading-tight">
+                  {value}
+                </span>
+              )}
+              {typeof value === 'number' && <span className="text-xs text-muted-foreground">{unit}</span>}
             </div>
           </div>
         </div>

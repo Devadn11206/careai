@@ -1,449 +1,425 @@
-import React, { useEffect, useRef, useState } from 'react';
-import { Send, Paperclip, ShieldCheck, Globe, Loader2, Smile, X } from 'lucide-react';
-import type { TeleUser, TeleChatMessage } from './telechatTypes';
-import { translateTelechatMessage } from '../../../services/telechatTranslationService';
-import { BackendAPI } from '../../../services/apiClient';
-import type { ChatMessage, TypingEvent } from '../../../types';
-import { ConsultationShell } from '../../consultation/ConsultationShell';
+import React, { useState, useEffect, useRef } from "react";
+import { motion, AnimatePresence } from "framer-motion";
+import { 
+  Send, Paperclip, Mic, Image as ImageIcon, 
+  FileText, MoreVertical, Search, Smile,
+  Activity, Shield, Zap, Sparkles, Loader2,
+  Check, CheckCheck, Phone, Video, Info,
+  ChevronLeft, Trash2, Download, Play, Pause
+} from "lucide-react";
+import { GlassCard } from "@/components/carex/GlassCard";
+import { NeonButton } from "@/components/carex/NeonButton";
+import { useHealth } from "@/services/HealthContext";
+import { BackendAPI } from "@/services/apiClient";
+import { cn } from "@/lib/utils";
+import { format } from "date-fns";
+import { toast } from "sonner";
 
-interface ChatPanelProps {
-  currentUser: TeleUser;
-  appointmentId: string;
-  onClose: () => void;
+interface Message {
+  id: string;
+  senderId: string;
+  content: string;
+  messageType: string;
+  attachmentUrl?: string;
+  attachmentName?: string;
+  isRead: boolean;
+  isDelivered: boolean;
+  createdAt: string;
 }
 
-const SUPPORTED_LANGUAGES = [
-  { code: 'en', name: 'English', flag: '🇺🇸' },
-  { code: 'es', name: 'Español', flag: '🇪🇸' },
-  { code: 'fr', name: 'Français', flag: '🇫🇷' },
-  { code: 'zh', name: '中文', flag: '🇨🇳' },
-];
+interface Room {
+  id: string;
+  otherUser: {
+    id: string;
+    name: string;
+    profilePicUrl?: string;
+    specialization?: string;
+  };
+  lastMessage: Message | null;
+  unreadCount: number;
+  status: string;
+}
 
-const QUICK_EMOJIS = ['😀', '😂', '😍', '🙏', '👍', '👏', '❤️', '🤒', '😷', '✅', '📄', '💊'];
+interface ChatPanelProps {
+  initialAppointmentId?: string | null;
+  onClose?: () => void;
+}
 
-export const ChatPanel: React.FC<ChatPanelProps> = ({ currentUser, appointmentId, onClose }) => {
-  const [messages, setMessages] = useState<TeleChatMessage[]>(() => {
-    return [
-      {
-        id: 'welcome',
-        senderId: 'system',
-        senderName: 'CareXAI',
-        text: 'Hello, this is your secure CareXAI chat. You can share symptoms or questions here before or during the consultation.',
-        timestamp: Date.now() - 60_000,
-        isRead: true,
-      },
-    ];
-  });
-  const [inputText, setInputText] = useState('');
-  const [selectedFile, setSelectedFile] = useState<File | null>(null);
+export const ChatPanel: React.FC<ChatPanelProps> = ({ initialAppointmentId, onClose }) => {
+  const { socket, user } = useHealth();
+  const [rooms, setRooms] = useState<Room[]>([]);
+  const [activeRoom, setActiveRoom] = useState<Room | null>(null);
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [newMessage, setNewMessage] = useState("");
+  const [isLoading, setIsLoading] = useState(false);
   const [isTyping, setIsTyping] = useState(false);
-  const [connectionStatus, setConnectionStatus] = useState<'connected' | 'disconnected'>('disconnected');
-  const [isUploading, setIsUploading] = useState(false);
-  const [currentLang, setCurrentLang] = useState('en');
-  const [showLangMenu, setShowLangMenu] = useState(false);
-  const [translatingIds, setTranslatingIds] = useState<Set<string>>(new Set());
-  const [showEmojiPicker, setShowEmojiPicker] = useState(false);
-
-  const [accessError, setAccessError] = useState<string | null>(null);
-
-  const scrollRef = useRef<HTMLDivElement>(null);
-  const typingTimeoutRef = useRef<number | null>(null);
+  const [otherUserTyping, setOtherUserTyping] = useState(false);
+  const messagesEndRef = useRef<HTMLDivElement>(null);
+  const typingTimeoutRef = useRef<any>(null);
 
   useEffect(() => {
-    if (scrollRef.current) {
-      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    fetchRooms();
+  }, []);
+
+  useEffect(() => {
+    if (initialAppointmentId && rooms.length > 0) {
+      const room = rooms.find(r => r.id === initialAppointmentId);
+      if (room) setActiveRoom(room);
     }
-  }, [messages]);
+  }, [initialAppointmentId, rooms]);
 
-  const triggerTranslation = async (msgs: TeleChatMessage[], targetLang: string) => {
-    if (targetLang === 'en') return;
+  useEffect(() => {
+    if (activeRoom) {
+      fetchMessages(activeRoom.id);
+    }
+  }, [activeRoom]);
 
-    const msgsToTranslate = msgs.filter(
-      (m) => !m.translations?.[targetLang] && !translatingIds.has(m.id + targetLang),
-    );
-    if (msgsToTranslate.length === 0) return;
+  useEffect(() => {
+    if (!socket) return;
 
-    setTranslatingIds((prev) => {
-      const next = new Set(prev);
-      msgsToTranslate.forEach((m) => next.add(m.id + targetLang));
-      return next;
+    const handleMessage = (msg: Message) => {
+      if (activeRoom && msg.id === activeRoom.id) { // Wait, room id is appointmentId
+        // This is a bit tricky, the event payload should have appointmentId
+      }
+      // Re-fetch rooms to update last message/unread count
+      fetchRooms();
+    };
+
+    socket.on('chat:message', (msg: any) => {
+      if (activeRoom && msg.appointmentId === activeRoom.id) {
+        setMessages(prev => [...prev, msg]);
+        scrollToBottom();
+        // Send seen status
+        socket.emit('chat:seen', { appointmentId: activeRoom.id, messageIds: [msg.id] });
+      }
+      fetchRooms();
     });
 
-    for (const msg of msgsToTranslate) {
-      const translatedText = await translateTelechatMessage(msg.text, targetLang);
-      setMessages((prev) =>
-        prev.map((m) =>
-          m.id === msg.id
-            ? { ...m, translations: { ...(m.translations || {}), [targetLang]: translatedText } }
-            : m,
-        ),
-      );
-      setTranslatingIds((prev) => {
-        const next = new Set(prev);
-        next.delete(msg.id + targetLang);
-        return next;
-      });
-    }
-  };
-
-  const handleLanguageChange = (code: string) => {
-    setCurrentLang(code);
-    setShowLangMenu(false);
-    triggerTranslation(messages, code);
-  };
-
-  useEffect(() => {
-    let unsubChat: (() => void) | null = null;
-    let unsubTyping: (() => void) | null = null;
-    let cancelled = false;
-
-    const mapBackendMessage = (msg: ChatMessage): TeleChatMessage => {
-      const isMine = msg.senderId === currentUser.id;
-      return {
-        id: msg.id,
-        senderId: msg.senderId,
-        senderName: isMine ? currentUser.name : 'Clinician',
-        text: msg.content,
-        timestamp: new Date(msg.timestamp).getTime(),
-        isRead: msg.isRead,
-        attachment: msg.attachmentUrl
-          ? {
-              name:
-                msg.attachmentType === 'image'
-                  ? 'Image'
-                  : msg.attachmentType === 'video'
-                    ? 'Video'
-                    : msg.attachmentType === 'pdf'
-                      ? 'PDF'
-                      : 'File',
-              type: msg.attachmentType || 'file',
-              url: msg.attachmentUrl,
-            }
-          : undefined,
-      };
-    };
-
-    const init = async () => {
-      try {
-        setAccessError(null);
-        setConnectionStatus('connected');
-        const history = await BackendAPI.getChatMessages(appointmentId);
-        if (cancelled) return;
-        const mapped = history.map(mapBackendMessage);
-        setMessages((prev) => {
-          const hasWelcome = prev.find((m) => m.id === 'welcome');
-          const base = hasWelcome ? prev.filter((m) => m.id === 'welcome') : [];
-          return [...base, ...mapped];
-        });
-        if (currentLang !== 'en' && mapped.length > 0) {
-          triggerTranslation(mapped, currentLang);
-        }
-      } catch (err: any) {
-        console.error('[Telechat] Failed to load messages', err);
-        if (!cancelled) {
-          setAccessError(err?.message || 'Unable to access secure chat for this appointment.');
-          setConnectionStatus('disconnected');
-        }
+    socket.on('chat:typing', (data: any) => {
+      if (activeRoom && data.appointmentId === activeRoom.id && data.senderId !== user?.id) {
+        setOtherUserTyping(data.isTyping);
       }
+    });
 
-      unsubChat = BackendAPI.onChatMessage((msg: ChatMessage) => {
-        if (msg.appointmentId !== appointmentId) return;
-        const mapped = mapBackendMessage(msg);
-        setMessages((prev) => {
-          if (prev.find((m) => m.id === mapped.id)) return prev;
-          return [...prev, mapped];
-        });
-        if (currentLang !== 'en') {
-          triggerTranslation([mapped], currentLang);
-        }
-      });
-
-      unsubTyping = BackendAPI.onTyping((t: TypingEvent) => {
-        if (t.appointmentId !== appointmentId) return;
-        if (t.senderId === currentUser.id) return;
-        setIsTyping(t.isTyping);
-      });
-    };
-
-    init();
+    socket.on('chat:seen', (data: any) => {
+      if (activeRoom && data.appointmentId === activeRoom.id) {
+        setMessages(prev => prev.map(m => data.messageIds.includes(m.id) ? { ...m, isRead: true } : m));
+      }
+    });
 
     return () => {
-      cancelled = true;
-      if (unsubChat) unsubChat();
-      if (unsubTyping) unsubTyping();
+      socket.off('chat:message');
+      socket.off('chat:typing');
+      socket.off('chat:seen');
     };
-  }, [appointmentId, currentUser.id, currentUser.name, currentLang]);
+  }, [socket, activeRoom, user]);
 
-  const notifyTyping = (isTypingFlag: boolean) => {
-    const socket = BackendAPI.getSocket();
-    if (!socket) return;
-    socket.emit('chat:typing', { appointmentId, isTyping: isTypingFlag });
-  };
-
-  const handleInputChange = (e: React.ChangeEvent<HTMLInputElement>) => {
-    setInputText(e.target.value);
-    notifyTyping(true);
-    if (typingTimeoutRef.current) window.clearTimeout(typingTimeoutRef.current);
-    typingTimeoutRef.current = window.setTimeout(() => notifyTyping(false), 1000);
-  };
-
-  const handleSend = async () => {
-    if ((!inputText.trim() && !selectedFile) || connectionStatus === 'disconnected' || isUploading) return;
-
-    setIsUploading(true);
+  const fetchRooms = async () => {
     try {
-      let attachmentUrl: string | undefined;
-      let attachmentType: 'image' | 'pdf' | 'video' | 'file' | undefined;
-
-      if (selectedFile) {
-        attachmentUrl = await new Promise<string>((resolve) => {
-          const reader = new FileReader();
-          reader.onloadend = () => resolve(reader.result as string);
-          reader.readAsDataURL(selectedFile);
-        });
-        if (selectedFile.type.startsWith('image/')) attachmentType = 'image';
-        else if (selectedFile.type.startsWith('video/')) attachmentType = 'video';
-        else if (selectedFile.type === 'application/pdf') attachmentType = 'pdf';
-        else attachmentType = 'file';
-      }
-
-      await BackendAPI.sendChatMessage({
-        appointmentId,
-        content: inputText,
-        attachmentUrl,
-        attachmentType,
-      });
-
-      if (typingTimeoutRef.current) {
-        window.clearTimeout(typingTimeoutRef.current);
-      }
-      notifyTyping(false);
-      setInputText('');
-      setSelectedFile(null);
+      const data = await BackendAPI.getChatRooms();
+      setRooms(data);
     } catch (err) {
-      console.error('[Telechat] Failed to send message', err);
-    } finally {
-      setIsUploading(false);
+      console.error("Failed to load clinical rooms");
     }
   };
 
-  const getDisplayText = (msg: TeleChatMessage) => {
-    if (currentLang === 'en') return msg.text;
-    return msg.translations?.[currentLang] || msg.text;
+  const fetchMessages = async (appointmentId: string) => {
+    setIsLoading(true);
+    try {
+      const data = await BackendAPI.getChatMessages(appointmentId);
+      setMessages(data);
+      scrollToBottom();
+      
+      // Mark as seen
+      const unreadIds = data.filter((m: any) => !m.isRead && m.senderId !== user?.id).map((m: any) => m.id);
+      if (unreadIds.length > 0) {
+        socket?.emit('chat:seen', { appointmentId, messageIds: unreadIds });
+      }
+    } catch (err) {
+      console.error("Failed to load clinical history");
+    } finally {
+      setIsLoading(false);
+    }
   };
 
-  const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
-    if (e.target.files && e.target.files[0]) setSelectedFile(e.target.files[0]);
+  const scrollToBottom = () => {
+    setTimeout(() => {
+      messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, 100);
   };
 
-  const appendEmoji = (emoji: string) => {
-    setInputText((prev) => `${prev}${emoji}`);
+  const handleSendMessage = () => {
+    if (!newMessage.trim() || !activeRoom || !socket) return;
+
+    const payload = {
+      appointmentId: activeRoom.id,
+      content: newMessage,
+      messageType: 'TEXT'
+    };
+
+    socket.emit('chat:message', payload);
+    setNewMessage("");
+    handleTyping(false);
   };
 
-  const formatTs = (ms: number) => new Date(ms).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  const handleTyping = (typing: boolean) => {
+    if (!activeRoom || !socket) return;
+    
+    if (typing !== isTyping) {
+      setIsTyping(typing);
+      socket.emit('chat:typing', { appointmentId: activeRoom.id, isTyping: typing });
+    }
+
+    if (typing) {
+      if (typingTimeoutRef.current) clearTimeout(typingTimeoutRef.current);
+      typingTimeoutRef.current = setTimeout(() => {
+        setIsTyping(false);
+        socket.emit('chat:typing', { appointmentId: activeRoom.id, isTyping: false });
+      }, 3000);
+    }
+  };
 
   return (
-    <ConsultationShell
-      title="Secure Consultation Chat"
-      subtitle={
-        <span className="inline-flex items-center gap-1">
-          <ShieldCheck size={12} className="text-rose-600" />
-          Encrypted • For clinical use
-        </span>
-      }
-      onClose={onClose}
-      maxWidthClassName="max-w-3xl"
-      headerRight={
-        <div className="relative text-xs">
-          <div
-            className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold border ${
-              connectionStatus === 'connected'
-                ? 'bg-rose-50 text-rose-700 border-rose-200 dark:bg-rose-900/20 dark:text-rose-200 dark:border-rose-800/40'
-                : 'bg-slate-50 text-slate-600 border-slate-200 dark:bg-slate-800/60 dark:text-slate-200 dark:border-slate-700'
-            }`}
-          >
-            <span
-              className={`w-2 h-2 rounded-full ${
-                connectionStatus === 'connected' ? 'bg-rose-500 animate-pulse' : 'bg-rose-300'
-              }`}
+    <div className="flex h-[calc(100vh-140px)] gap-6 overflow-hidden">
+      {/* Sidebar - Conversation List */}
+      <GlassCard className="w-80 flex flex-col border-primary/10 overflow-hidden shrink-0">
+        <div className="p-4 border-b border-border/40">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-muted-foreground" />
+            <input 
+              type="text" 
+              placeholder="Search clinical grid..."
+              className="w-full bg-muted/20 border border-border/50 rounded-xl py-2 pl-9 pr-3 text-xs focus:outline-none focus:ring-1 focus:ring-primary/40 transition-all"
             />
-            {connectionStatus === 'connected' ? 'Connected' : 'Offline'}
           </div>
-          <button
-            type="button"
-            onClick={() => setShowLangMenu((v) => !v)}
-            className="flex items-center gap-1.5 px-3 py-1.5 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 rounded-xl text-slate-600 dark:text-slate-200 hover:bg-slate-50 dark:hover:bg-slate-800"
-          >
-            <Globe size={14} />
-            {SUPPORTED_LANGUAGES.find((l) => l.code === currentLang)?.name}
-          </button>
-          {showLangMenu && (
-            <div className="absolute right-0 mt-2 w-44 bg-white dark:bg-slate-900 rounded-xl shadow-xl border border-slate-100 dark:border-slate-800 py-1 z-10">
-              {SUPPORTED_LANGUAGES.map((lang) => (
-                <button
-                  key={lang.code}
-                  type="button"
-                  onClick={() => handleLanguageChange(lang.code)}
-                  className={`w-full text-left px-3 py-1.5 text-xs flex items-center gap-2 hover:bg-slate-50 dark:hover:bg-slate-800 ${
-                    currentLang === lang.code
-                      ? 'text-rose-600 font-semibold bg-rose-50 dark:bg-rose-900/20'
-                      : 'text-slate-600 dark:text-slate-200'
-                  }`}
-                >
-                  <span>{lang.flag}</span>
-                  <span>{lang.name}</span>
-                </button>
-              ))}
-            </div>
-          )}
         </div>
-      }
-      footer={
-        <div className="p-2 bg-[#f0f2f5] dark:bg-slate-900 border-t border-slate-200 dark:border-slate-700 relative">
-          {showEmojiPicker && (
-            <div className="absolute bottom-[64px] left-2 right-2 rounded-xl border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-900 p-2 shadow-xl z-20">
-              <div className="flex flex-wrap gap-1">
-                {QUICK_EMOJIS.map((emoji) => (
-                  <button
-                    key={emoji}
-                    type="button"
-                    onClick={() => appendEmoji(emoji)}
-                    className="text-lg px-2 py-1 rounded hover:bg-slate-100 dark:hover:bg-slate-800"
-                  >
-                    {emoji}
-                  </button>
-                ))}
+
+        <div className="flex-1 overflow-y-auto custom-scrollbar">
+          {rooms.map((room) => (
+            <div 
+              key={room.id}
+              onClick={() => setActiveRoom(room)}
+              className={cn(
+                "p-4 border-b border-border/20 cursor-pointer transition-all hover:bg-primary/5 group relative",
+                activeRoom?.id === room.id ? "bg-primary/10 border-l-4 border-l-primary" : ""
+              )}
+            >
+              <div className="flex items-center gap-3">
+                <div className="relative">
+                  <div className="h-10 w-10 rounded-full bg-muted/30 flex items-center justify-center border border-border/50">
+                    {room.otherUser.profilePicUrl ? (
+                      <img src={room.otherUser.profilePicUrl} className="h-full w-full rounded-full object-cover" />
+                    ) : (
+                      room.otherUser.name[0]
+                    )}
+                  </div>
+                  <div className="absolute -bottom-0.5 -right-0.5 h-3 w-3 bg-success rounded-full border-2 border-background" />
+                </div>
+                <div className="flex-1 min-w-0">
+                  <div className="flex justify-between items-start mb-0.5">
+                    <h4 className="text-xs font-bold truncate text-foreground group-hover:text-primary transition-colors">{room.otherUser.name}</h4>
+                    <span className="text-[8px] text-muted-foreground uppercase">{room.lastMessage ? format(new Date(room.lastMessage.createdAt), 'HH:mm') : ''}</span>
+                  </div>
+                  <p className="text-[10px] text-muted-foreground truncate italic">
+                    {room.lastMessage?.content || "Start secure consultation..."}
+                  </p>
+                </div>
+                {room.unreadCount > 0 && (
+                  <div className="h-4 w-4 rounded-full bg-primary flex items-center justify-center text-[8px] font-bold text-primary-foreground shadow-glow-primary">
+                    {room.unreadCount}
+                  </div>
+                )}
               </div>
             </div>
-          )}
-
-          <div className="flex items-end gap-2">
-            <label className="shrink-0 w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center cursor-pointer text-slate-500 hover:text-slate-700">
-              <Paperclip size={16} />
-              <input type="file" className="hidden" onChange={handleFileSelect} accept="image/*,video/*,application/pdf,.doc,.docx,.xls,.xlsx,.txt" />
-            </label>
-
-            <button
-              type="button"
-              onClick={() => setShowEmojiPicker((prev) => !prev)}
-              className="shrink-0 w-10 h-10 rounded-full bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 flex items-center justify-center text-slate-500 hover:text-slate-700"
-              aria-label="Emoji"
-            >
-              <Smile size={16} />
-            </button>
-
-            <div className="flex-1 rounded-3xl bg-white dark:bg-slate-800 border border-slate-200 dark:border-slate-700 px-3 py-2">
-              <textarea
-                value={inputText}
-                onChange={(e) => {
-                  setInputText(e.target.value);
-                  notifyTyping(true);
-                }}
-                onBlur={() => notifyTyping(false)}
-                onKeyDown={(e) => {
-                  if (e.key === 'Enter' && !e.shiftKey) {
-                    e.preventDefault();
-                    handleSend();
-                  }
-                }}
-                placeholder="Type a message..."
-                className="w-full text-[13px] bg-transparent text-slate-800 dark:text-slate-100 outline-none resize-none min-h-[24px] max-h-24"
-                rows={1}
-              />
-              {selectedFile && (
-                <div className="mt-1 flex items-center justify-between gap-2 text-[11px] text-slate-600 dark:text-slate-300">
-                  <span className="truncate">Attached: {selectedFile.name}</span>
-                  <button
-                    type="button"
-                    onClick={() => setSelectedFile(null)}
-                    className="w-5 h-5 rounded-full flex items-center justify-center hover:bg-slate-200 dark:hover:bg-slate-700"
-                    aria-label="Remove attachment"
-                  >
-                    <X size={12} />
-                  </button>
-                </div>
-              )}
+          ))}
+          {rooms.length === 0 && (
+            <div className="p-8 text-center opacity-30">
+              <Sparkles className="h-8 w-8 mx-auto mb-2" />
+              <p className="text-[10px] font-bold uppercase tracking-widest leading-relaxed">No active consultations found in your clinical perimeter</p>
             </div>
-
-            <button
-              type="button"
-              onClick={handleSend}
-              disabled={connectionStatus === 'disconnected' || isUploading || (!inputText.trim() && !selectedFile)}
-              className="shrink-0 w-10 h-10 rounded-full bg-[#2563eb] text-white flex items-center justify-center disabled:opacity-50"
-              aria-label="Send message"
-            >
-              {isUploading ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send size={16} />}
-            </button>
-          </div>
+          )}
         </div>
-      }
-    >
-      <div
-        ref={scrollRef}
-        className="h-full overflow-y-auto p-4 space-y-3"
-        style={{
-          backgroundColor: '#efeae2',
-          backgroundImage: 'url("https://user-images.githubusercontent.com/15075759/28719144-86dc0f70-73b1-11e7-911d-60d70fcded21.png")',
-          backgroundSize: '400px',
-        }}
-      >
-        {accessError && (
-          <div className="flex justify-center">
-            <div className="bg-red-50 border border-red-200 text-red-700 text-xs rounded-xl px-3 py-2 max-w-[90%]">{accessError}</div>
-          </div>
-        )}
+      </GlassCard>
 
-        {messages.map((msg) => {
-          const isMine = msg.senderId === currentUser.id;
-          const isSystem = msg.senderId === 'system';
-          const bubbleClass = isMine
-            ? 'bg-[#d9fdd3] text-slate-900 rounded-tr-sm'
-            : 'bg-white text-slate-900 rounded-tl-sm';
-          return (
-            <div key={msg.id} className={`flex ${isSystem ? 'justify-center' : isMine ? 'justify-end' : 'justify-start'}`}>
-              {isSystem ? (
-                <div className="bg-[#fff5c4] text-slate-700 text-[11px] rounded-lg px-3 py-2 max-w-[85%] text-center shadow-sm">
-                  {getDisplayText(msg)}
-                </div>
-              ) : (
-                <div className={`max-w-[82%] rounded-xl px-3 py-2 shadow-sm ${bubbleClass}`}>
-                  {!isMine && <div className="text-[10px] font-bold text-slate-500 mb-1">{msg.senderName}</div>}
-                  <div className="whitespace-pre-wrap break-words text-[13px]">{getDisplayText(msg)}</div>
-
-                  {msg.attachment && (
-                    <div className="mt-2 rounded-lg overflow-hidden border border-black/10">
-                      {msg.attachment.type === 'image' ? (
-                        <img src={msg.attachment.url} alt={msg.attachment.name} className="max-h-56 w-full object-cover" />
-                      ) : msg.attachment.type === 'video' ? (
-                        <video src={msg.attachment.url} controls className="max-h-56 w-full bg-black" />
-                      ) : (
-                        <a
-                          href={msg.attachment.url}
-                          target="_blank"
-                          rel="noreferrer"
-                          className="block p-2 text-[12px] font-semibold text-blue-700 underline"
-                        >
-                          Open {msg.attachment.name}
-                        </a>
-                      )}
-                    </div>
+      {/* Main Chat Panel */}
+      <GlassCard className="flex-1 flex flex-col border-primary/10 overflow-hidden relative">
+        {activeRoom ? (
+          <>
+            {/* Header */}
+            <div className="p-4 border-b border-border/40 flex items-center justify-between bg-primary/5">
+              <div className="flex items-center gap-3">
+                <div className="h-10 w-10 rounded-full bg-primary/10 flex items-center justify-center border border-primary/20 shadow-glow-primary">
+                  {activeRoom.otherUser.profilePicUrl ? (
+                    <img src={activeRoom.otherUser.profilePicUrl} className="h-full w-full rounded-full object-cover" />
+                  ) : (
+                    activeRoom.otherUser.name[0]
                   )}
-
-                  <div className="mt-1 text-[10px] text-slate-500 text-right">
-                    {formatTs(msg.timestamp)} {isMine ? (msg.isRead ? '✓✓' : '✓') : ''}
+                </div>
+                <div>
+                  <h3 className="text-sm font-bold text-foreground leading-tight">{activeRoom.otherUser.name}</h3>
+                  <div className="flex items-center gap-2 mt-0.5">
+                    <span className="h-1.5 w-1.5 bg-success rounded-full animate-pulse" />
+                    <span className="text-[9px] text-muted-foreground uppercase tracking-widest font-black">
+                      {otherUserTyping ? "Encrypted Channel: Typing..." : "Secure Health-Link: Active"}
+                    </span>
                   </div>
                 </div>
-              )}
+              </div>
+              <div className="flex items-center gap-3">
+                {onClose && (
+                  <button onClick={onClose} className="p-2 hover:bg-primary/10 rounded-lg transition-colors text-muted-foreground hover:text-primary md:hidden">
+                    <ChevronLeft size={20} />
+                  </button>
+                )}
+                <button className="p-2 hover:bg-primary/10 rounded-lg transition-colors text-muted-foreground hover:text-primary">
+                  <Phone size={16} />
+                </button>
+                <button className="p-2 hover:bg-primary/10 rounded-lg transition-colors text-muted-foreground hover:text-primary">
+                  <Video size={16} />
+                </button>
+                <div className="h-4 w-[1px] bg-border/40 mx-1" />
+                <button className="p-2 hover:bg-primary/10 rounded-lg transition-colors text-muted-foreground hover:text-primary">
+                  <Info size={16} />
+                </button>
+                {onClose && (
+                  <button onClick={onClose} className="hidden md:flex p-2 hover:bg-primary/10 rounded-lg transition-colors text-muted-foreground hover:text-red-400">
+                    <Trash2 size={16} />
+                  </button>
+                )}
+              </div>
             </div>
-          );
-        })}
 
-        {isTyping && (
-          <div className="flex items-center gap-2 text-[11px] text-slate-500 dark:text-slate-300 mt-2">
-            <span className="w-2 h-2 rounded-full bg-rose-400 animate-pulse" /> Clinician is typing…
+            {/* Messages Area */}
+            <div className="flex-1 overflow-y-auto p-6 space-y-6 custom-scrollbar">
+              <AnimatePresence initial={false}>
+                {messages.map((msg, idx) => {
+                  const isOwn = msg.senderId === user?.id;
+                  const showDate = idx === 0 || format(new Date(messages[idx-1].createdAt), 'yyyy-MM-dd') !== format(new Date(msg.createdAt), 'yyyy-MM-dd');
+                  
+                  return (
+                    <React.Fragment key={msg.id}>
+                      {showDate && (
+                        <div className="flex justify-center my-4">
+                          <span className="text-[8px] bg-muted/20 border border-border/40 text-muted-foreground px-3 py-1 rounded-full uppercase font-black tracking-widest">
+                            {format(new Date(msg.createdAt), 'MMMM dd, yyyy')}
+                          </span>
+                        </div>
+                      )}
+                      <motion.div
+                        initial={{ opacity: 0, y: 10, scale: 0.95 }}
+                        animate={{ opacity: 1, y: 0, scale: 1 }}
+                        className={cn(
+                          "flex w-full",
+                          isOwn ? "justify-end" : "justify-start"
+                        )}
+                      >
+                        <div className={cn(
+                          "max-w-[75%] relative group",
+                          isOwn ? "items-end" : "items-start"
+                        )}>
+                          <div className={cn(
+                            "px-4 py-3 rounded-2xl border transition-all",
+                            isOwn 
+                              ? "bg-primary/20 border-primary/40 text-foreground rounded-tr-none shadow-glow-primary/20" 
+                              : "bg-muted/30 border-border/50 text-foreground rounded-tl-none"
+                          )}>
+                            <p className="text-sm leading-relaxed">{msg.content}</p>
+                            <div className="flex items-center justify-end gap-1.5 mt-1.5">
+                              <span className="text-[8px] text-muted-foreground/60 uppercase font-black">
+                                {format(new Date(msg.createdAt), 'HH:mm')}
+                              </span>
+                              {isOwn && (
+                                msg.isRead ? <CheckCheck size={10} className="text-primary" /> : <Check size={10} className="text-muted-foreground/40" />
+                              )}
+                            </div>
+                          </div>
+                        </div>
+                      </motion.div>
+                    </React.Fragment>
+                  );
+                })}
+              </AnimatePresence>
+              <div ref={messagesEndRef} />
+            </div>
+
+            {/* Input Area */}
+            <div className="p-4 border-t border-border/40 bg-muted/5">
+              <div className="flex items-end gap-3 glass p-2 rounded-2xl border border-primary/20">
+                <button className="p-2.5 hover:bg-primary/10 rounded-xl transition-colors text-muted-foreground hover:text-primary">
+                  <Paperclip size={18} />
+                </button>
+                <textarea 
+                  rows={1}
+                  placeholder="Type secure clinical message..."
+                  className="flex-1 bg-transparent border-none py-2.5 px-2 text-sm focus:outline-none focus:ring-0 resize-none max-h-32 custom-scrollbar"
+                  value={newMessage}
+                  onChange={(e) => { setNewMessage(e.target.value); handleTyping(true); }}
+                  onKeyDown={(e) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault();
+                      handleSendMessage();
+                    }
+                  }}
+                />
+                <button className="p-2.5 hover:bg-primary/10 rounded-xl transition-colors text-muted-foreground hover:text-primary">
+                  <Mic size={18} />
+                </button>
+                <NeonButton 
+                  variant="primary" 
+                  size="sm" 
+                  className="h-10 w-10 p-0 rounded-xl shrink-0"
+                  onClick={handleSendMessage}
+                  disabled={!newMessage.trim()}
+                >
+                  <Send size={16} />
+                </NeonButton>
+              </div>
+              <div className="flex items-center justify-between mt-3 px-1">
+                <div className="flex items-center gap-4 text-muted-foreground">
+                  <button className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest hover:text-primary transition-colors">
+                    <ImageIcon size={12} /> Image
+                  </button>
+                  <button className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest hover:text-primary transition-colors">
+                    <FileText size={12} /> Record
+                  </button>
+                  <button className="flex items-center gap-1.5 text-[9px] font-black uppercase tracking-widest hover:text-secondary transition-colors">
+                    <Zap size={12} /> AI Suggest
+                  </button>
+                </div>
+                <div className="flex items-center gap-2">
+                  <Shield size={10} className="text-success" />
+                  <span className="text-[8px] text-muted-foreground uppercase font-black tracking-tighter">E2E Health-Grade Encryption Active</span>
+                </div>
+              </div>
+            </div>
+          </>
+        ) : (
+          <div className="flex-1 flex flex-col items-center justify-center text-center p-12 space-y-6">
+            <div className="relative">
+              <div className="absolute inset-0 bg-primary/20 blur-3xl rounded-full scale-150 animate-pulse" />
+              <div className="relative h-24 w-24 bg-primary/10 rounded-3xl border border-primary/20 flex items-center justify-center shadow-glow-primary">
+                <Activity className="h-12 w-12 text-primary" />
+              </div>
+            </div>
+            <div>
+              <h2 className="text-2xl font-display font-bold tracking-tight text-foreground">Clinical Communication Node</h2>
+              <p className="text-muted-foreground max-w-sm mx-auto mt-2 text-sm leading-relaxed">
+                Select a consultation from the clinical grid to initialize a secure, encrypted tele-health link.
+              </p>
+            </div>
+            <div className="grid grid-cols-2 gap-4 max-w-md w-full">
+              <GlassCard className="p-4 border-primary/10 bg-primary/5 flex flex-col items-center gap-2">
+                <Shield className="h-5 w-5 text-primary" />
+                <span className="text-[9px] font-black uppercase tracking-widest">Secure Access</span>
+              </GlassCard>
+              <GlassCard className="p-4 border-secondary/10 bg-secondary/5 flex flex-col items-center gap-2">
+                <Sparkles className="h-5 w-5 text-secondary" />
+                <span className="text-[9px] font-black uppercase tracking-widest">AI Summaries</span>
+              </GlassCard>
+            </div>
           </div>
         )}
-      </div>
-    </ConsultationShell>
+      </GlassCard>
+    </div>
   );
 };

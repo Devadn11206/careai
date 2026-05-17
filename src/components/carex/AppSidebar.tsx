@@ -3,9 +3,13 @@ import { NavLink, useLocation } from "react-router-dom";
 import { motion } from "framer-motion";
 import {
   Activity, LayoutDashboard, Brain, Bell, MessageSquare,
-  Video, User, Settings, ChevronLeft, Heart, Stethoscope
+  Video, User, Settings, ChevronLeft, Heart, Stethoscope, LogOut
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { useHealth } from "@/services/HealthContext";
+import { toast } from "sonner";
+
+// ... existing items ...
 
 const items = [
   { title: "Dashboard", url: "/dashboard", icon: LayoutDashboard },
@@ -14,12 +18,45 @@ const items = [
   { title: "Alerts", url: "/alerts", icon: Bell, badge: 3 },
   { title: "AI Assistant", url: "/chat", icon: MessageSquare },
   { title: "Consultations", url: "/consult", icon: Video },
-  { title: "Doctor View", url: "/doctor", icon: Stethoscope },
+  { title: "Consult Doctors", url: "/doctors", icon: Stethoscope },
 ];
 
 export const AppSidebar = () => {
+  const { user, logout } = useHealth();
   const [collapsed, setCollapsed] = useState(false);
   const { pathname } = useLocation();
+
+  const handleLogout = () => {
+    const confirm = window.confirm("Are you sure you want to logout from CareXAI?");
+    if (confirm) {
+      toast.loading("De-authenticating...");
+      logout();
+      toast.dismiss();
+      toast.success("Logged out successfully.");
+    }
+  };
+
+  const roleItems = items.filter(item => {
+    // Doctors don't see AI Insights, AI Assistant, but see Prescription OCR
+    if (user?.role === "DOCTOR") {
+      if (item.title === "AI Insights" || item.title === "AI Assistant") return false;
+      if (item.title === "Consult Doctors") return false;
+    }
+    // Admin doesn't see Vitals, AI Insights, AI Assistant or Consult Doctors
+    if (user?.role === "ADMIN") {
+      if (item.title === "Vitals" || item.title === "AI Insights" || item.title === "AI Assistant" || item.title === "Consult Doctors") return false;
+    }
+    // Patients see everything except things restricted above
+    return true;
+  });
+
+  // Add role-specific items
+  if (user?.role === "DOCTOR") {
+    // Add Prescription OCR if not present
+    if (!roleItems.find(i => i.title === "Prescription OCR")) {
+      roleItems.splice(2, 0, { title: "Prescription OCR", url: "/prescription-ocr", icon: Brain });
+    }
+  }
 
   useEffect(() => {
     const onResize = () => setCollapsed(window.innerWidth < 1024);
@@ -54,7 +91,7 @@ export const AppSidebar = () => {
 
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto p-3 space-y-1">
-        {items.map((item) => {
+        {roleItems.map((item) => {
           const active = pathname === item.url;
           return (
             <NavLink
@@ -89,11 +126,18 @@ export const AppSidebar = () => {
           {!collapsed && <span>Profile</span>}
         </NavLink>
         <button
+          onClick={handleLogout}
+          className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-all group"
+        >
+          <LogOut className="h-5 w-5 group-hover:scale-110 transition-transform" />
+          {!collapsed && <span className="font-medium">Logout</span>}
+        </button>
+        <button
           onClick={() => setCollapsed((c) => !c)}
           className="w-full flex items-center gap-3 rounded-xl px-3 py-2.5 text-sm text-muted-foreground hover:text-primary hover:bg-muted/50 transition-all"
         >
           <ChevronLeft className={cn("h-5 w-5 transition-transform", collapsed && "rotate-180")} />
-          {!collapsed && <span>Collapse</span>}
+          {!collapsed && <span>Collapse Sidebar</span>}
         </button>
       </div>
     </motion.aside>

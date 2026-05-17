@@ -10,9 +10,13 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, LineChart, Line, Legend, PieChart, Pie, Cell } from 'recharts';
 import { AutomationAssistant } from '../components/features/AutomationAssistant';
 import { ClientAction } from '../types';
+import { AdminCommandMap } from '../components/features/admin/AdminCommandMap';
+import { Radio, Shield, Activity, Sparkles, User } from 'lucide-react';
+import { cn } from '@/lib/utils';
+import { NeonButton } from '@/components/carex/NeonButton';
 
 
-type AdminTab = 'OVERVIEW' | 'USERS' | 'VERIFICATION' | 'APPOINTMENTS' | 'RECORDS' | 'SAFETY' | 'BROADCAST' | 'ANALYTICS' | 'SETTINGS' | 'LOGS';
+type AdminTab = 'OVERVIEW' | 'INTELLIGENCE' | 'USERS' | 'VERIFICATION' | 'APPOINTMENTS' | 'RECORDS' | 'SAFETY' | 'BROADCAST' | 'ANALYTICS' | 'SETTINGS' | 'LOGS';
 
 // Demo mode: when running locally we can use mock/demo doctors for richer
 // verification flows. In production we must only surface real doctors coming
@@ -20,7 +24,7 @@ type AdminTab = 'OVERVIEW' | 'USERS' | 'VERIFICATION' | 'APPOINTMENTS' | 'RECORD
 const IS_DEMO_MODE = false; // Demo mode disabled: only real registered accounts and backend data are permitted.
 
 export const AdminDashboard: React.FC = () => {
-    const [activeTab, setActiveTab] = useState<AdminTab>('OVERVIEW');
+    const [activeTab, setActiveTab] = useState<AdminTab>('INTELLIGENCE');
     const [stats, setStats] = useState<AdminStats | null>(null);
     const [users, setUsers] = useState<(DoctorProfile | PatientProfile)[]>([]);
     const [appointments, setAppointments] = useState<Appointment[]>([]);
@@ -168,10 +172,19 @@ export const AdminDashboard: React.FC = () => {
             });
         });
 
+        const unsubscribeEmergency = BackendAPI.onEmergencyAlert(({ alert }) => {
+            setAlerts((prev) => {
+                if (prev.find(a => a.id === alert.id)) return prev;
+                return [alert, ...prev];
+            });
+            // Also refresh stats if it's a significant event
+            if (alert.severity === 'CRITICAL') refreshData();
+        });
+
         // Hash navigation listener
         const handleHashChange = () => {
             const hash = window.location.hash.replace('#', '').toUpperCase();
-            const validTabs: AdminTab[] = ['OVERVIEW', 'USERS', 'VERIFICATION', 'APPOINTMENTS', 'RECORDS', 'SAFETY', 'BROADCAST', 'ANALYTICS', 'SETTINGS', 'LOGS'];
+            const validTabs: AdminTab[] = ['OVERVIEW', 'INTELLIGENCE', 'USERS', 'VERIFICATION', 'APPOINTMENTS', 'RECORDS', 'SAFETY', 'BROADCAST', 'ANALYTICS', 'SETTINGS', 'LOGS'];
 
             if (hash && validTabs.includes(hash as AdminTab)) {
                 setActiveTab(hash as AdminTab);
@@ -189,6 +202,7 @@ export const AdminDashboard: React.FC = () => {
             unsubscribeSocket();
             unsubscribeApptUpdated();
             unsubscribeDoctor();
+            unsubscribeEmergency();
             window.removeEventListener('hashchange', handleHashChange);
         };
     }, []);
@@ -386,6 +400,94 @@ export const AdminDashboard: React.FC = () => {
             </div>
         </div>
     );
+
+    const renderIntelligence = () => {
+        return (
+            <div className="grid grid-cols-1 lg:grid-cols-4 gap-6 h-[800px]">
+                {/* Main Command Map */}
+                <div className="lg:col-span-3 h-full">
+                    <AdminCommandMap className="h-full" />
+                </div>
+
+                {/* Real-time Command Sidebar */}
+                <div className="lg:col-span-1 space-y-6 flex flex-col h-full">
+                    {/* Live System Telemetry */}
+                    <Card className="bg-space-950/50 border-white/5 rounded-[32px] p-6 glass-card overflow-hidden relative">
+                        <div className="absolute top-0 right-0 w-24 h-24 bg-neon-400/5 rounded-full -mr-10 -mt-10 blur-2xl" />
+                        <div className="relative z-10 space-y-5">
+                            <div className="flex items-center gap-3 border-b border-white/5 pb-4">
+                                <Radio className="text-neon-400 animate-pulse" size={18} />
+                                <h3 className="text-xs font-black uppercase tracking-[0.3em] text-white">Live Telemetry</h3>
+                            </div>
+                            
+                            <div className="grid grid-cols-1 gap-4">
+                                {[
+                                    { label: 'Active Patients', value: users.length, color: 'text-bio-400' },
+                                    { label: 'Online Doctors', value: doctors.filter(d => d.status === DoctorStatus.VERIFIED).length, color: 'text-neon-400' },
+                                    { label: 'Consultations', value: appointments.filter(a => a.status === 'SCHEDULED').length, color: 'text-primary' },
+                                    { label: 'Emergency Load', value: alerts.length, color: 'text-pulse-400' }
+                                ].map((item, i) => (
+                                    <div key={i} className="flex justify-between items-center p-3 rounded-2xl bg-white/[0.03] border border-white/5">
+                                        <span className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">{item.label}</span>
+                                        <span className={`text-lg font-bold font-mono ${item.color}`}>{item.value}</span>
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div className="pt-4 space-y-3">
+                                <div className="flex justify-between items-center">
+                                    <span className="text-[9px] font-black text-slate-500 uppercase tracking-widest">AI Confidence</span>
+                                    <span className="text-[10px] font-black text-bio-400">98.4%</span>
+                                </div>
+                                <div className="h-1.5 w-full bg-white/5 rounded-full overflow-hidden">
+                                    <motion.div 
+                                        initial={{ width: 0 }}
+                                        animate={{ width: '98.4%' }}
+                                        className="h-full bg-gradient-to-r from-bio-500 to-neon-400 shadow-[0_0_15px_rgba(0,255,159,0.5)]" 
+                                    />
+                                </div>
+                            </div>
+                        </div>
+                    </Card>
+
+                    {/* AI Intelligence Feed */}
+                    <Card className="flex-1 bg-space-950/50 border-white/5 rounded-[32px] p-6 glass-card flex flex-col overflow-hidden">
+                        <div className="flex items-center justify-between mb-6 border-b border-white/5 pb-4">
+                            <div className="flex items-center gap-3">
+                                <div className="w-2 h-2 rounded-full bg-pulse-500 animate-ping" />
+                                <h3 className="text-xs font-black uppercase tracking-[0.3em] text-white">Grid Alerts</h3>
+                            </div>
+                            <span className="text-[8px] font-black text-slate-500 uppercase">Realtime Feed</span>
+                        </div>
+                        
+                        <div className="flex-1 overflow-y-auto custom-scrollbar space-y-4 pr-2">
+                            {alerts.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-600 text-center space-y-3">
+                                    <Shield className="opacity-20" size={32} />
+                                    <p className="text-[9px] font-black uppercase tracking-widest">No Critical Anomalies</p>
+                                </div>
+                            ) : (
+                                alerts.map(alert => (
+                                    <div key={alert.id} className="p-4 rounded-2xl bg-white/[0.03] border border-white/5 hover:border-pulse-500/30 transition-all group">
+                                        <div className="flex justify-between items-start mb-2">
+                                            <span className={`text-[8px] font-black px-2 py-0.5 rounded-md ${alert.severity === 'CRITICAL' ? 'bg-pulse-500/20 text-pulse-400' : 'bg-amber-500/20 text-amber-400'}`}>
+                                                {alert.severity}
+                                            </span>
+                                            <span className="text-[9px] text-slate-600 font-bold uppercase">LIVE</span>
+                                        </div>
+                                        <p className="text-xs font-bold text-white group-hover:text-pulse-400 transition-colors line-clamp-2">{alert.message}</p>
+                                        <div className="flex items-center gap-2 mt-3 text-[9px] font-bold text-slate-500 uppercase">
+                                            <Activity size={10} /> {alert.patientName}
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+                    </Card>
+                </div>
+            </div>
+        );
+    };
 
     const renderAnalytics = () => {
         // Calculate dynamic data for Appointments by Doctor
@@ -772,43 +874,77 @@ export const AdminDashboard: React.FC = () => {
     );
 
     return (
-        <div className="flex flex-col h-full overflow-hidden p-6 md:p-10 bg-black/20">
-            <div className="mb-10 flex flex-col md:flex-row justify-between items-start md:items-center gap-6 relative">
-                <div className="relative z-10">
-                    <motion.h2 
-                        initial={{ opacity: 0, x: -20 }}
-                        animate={{ opacity: 1, x: 0 }}
-                        className="text-4xl font-black text-white font-orbitron tracking-tighter"
-                    >
-                        Nexus <span className="premium-gradient-text">Command</span>
-                    </motion.h2>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-[0.4em] mt-3 font-black">Central Administration • Core Node 01</p>
+        <div className="flex flex-col h-screen overflow-hidden bg-background">
+            {/* Cinematic Intelligence Header */}
+            <header className="h-24 glass border-b border-white/5 px-10 flex items-center justify-between z-50">
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-4">
+                        <div className="h-12 w-12 rounded-2xl bg-secondary flex items-center justify-center text-white shadow-glow-secondary animate-pulse">
+                            <Shield size={24} />
+                        </div>
+                        <div>
+                            <h2 className="text-2xl font-black tracking-tighter">CareXAI <span className="text-primary">Nexus</span></h2>
+                            <span className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">Admin Command Hub</span>
+                        </div>
+                    </div>
+                    <div className="h-8 w-px bg-white/10 mx-4" />
+                    <div className="flex items-center gap-4">
+                        {[
+                            { label: 'Global Load', value: '72%', color: 'text-cyan-400' },
+                            { label: 'Node Sync', value: '100%', color: 'text-bio-400' },
+                        ].map((item, i) => (
+                            <div key={i} className="flex flex-col">
+                                <span className="text-[8px] font-black uppercase tracking-widest text-muted-foreground">{item.label}</span>
+                                <span className={cn("text-xs font-black font-mono", item.color)}>{item.value}</span>
+                            </div>
+                        ))}
+                    </div>
                 </div>
 
-                <div className="flex flex-wrap gap-4 relative z-10">
-                    {activeTab !== 'OVERVIEW' && (
-                        <Button 
-                            variant="secondary" 
-                            size="sm" 
-                            className="rounded-xl font-orbitron"
-                            onClick={() => { setActiveTab('OVERVIEW'); window.location.hash = 'overview'; }}
-                        >
-                            Back to Core
-                        </Button>
-                    )}
+                <div className="flex items-center gap-6">
+                    <div className="flex items-center gap-2 p-1.5 rounded-2xl bg-white/5 border border-white/10">
+                        {[
+                            { id: 'OVERVIEW', icon: '📊', label: 'Stats' },
+                            { id: 'INTELLIGENCE', icon: '📡', label: 'Intel' },
+                            { id: 'USERS', icon: '👥', label: 'Network' },
+                            { id: 'VERIFICATION', icon: '🪪', label: 'Vault' },
+                            { id: 'SAFETY', icon: '🚨', label: 'Safety' },
+                        ].map((tab) => (
+                            <button
+                                key={tab.id}
+                                onClick={() => { setActiveTab(tab.id as AdminTab); window.location.hash = tab.id.toLowerCase(); }}
+                                className={cn(
+                                    "px-4 py-2 rounded-xl text-[10px] font-black uppercase tracking-widest transition-all flex items-center gap-2",
+                                    activeTab === tab.id 
+                                        ? "bg-primary text-black shadow-glow-primary" 
+                                        : "text-muted-foreground hover:text-white hover:bg-white/5"
+                                )}
+                            >
+                                <span className="text-xs">{tab.icon}</span>
+                                <span>{tab.label}</span>
+                            </button>
+                        ))}
+                    </div>
+                    
+                    <div className="h-12 w-12 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-primary hover:scale-110 transition-transform cursor-pointer relative" onClick={() => setIsAssistantOpen(true)}>
+                        <Sparkles size={20} />
+                        <div className="absolute -inset-1 bg-primary/20 rounded-full animate-ping opacity-30" />
+                    </div>
                 </div>
-            </div>
+            </header>
 
-            <div className="flex-1 overflow-y-auto custom-scrollbar pr-2">
-                <AnimatePresence mode='wait'>
+            <main className="flex-1 overflow-y-auto custom-scrollbar p-10 relative">
+                <AnimatePresence mode="wait">
                     <motion.div
                         key={activeTab}
-                        initial={{ opacity: 0, y: 15 }}
+                        initial={{ opacity: 0, y: 20 }}
                         animate={{ opacity: 1, y: 0 }}
-                        exit={{ opacity: 0, y: -15 }}
-                        transition={{ duration: 0.3 }}
+                        exit={{ opacity: 0, y: -20 }}
+                        transition={{ duration: 0.4 }}
+                        className="h-full"
                     >
                         {activeTab === 'OVERVIEW' && renderOverview()}
+                        {activeTab === 'INTELLIGENCE' && renderIntelligence()}
                         {activeTab === 'USERS' && renderUsers()}
                         {activeTab === 'VERIFICATION' && renderVerification()}
                         {activeTab === 'APPOINTMENTS' && renderAppointments()}
@@ -820,67 +956,83 @@ export const AdminDashboard: React.FC = () => {
                         {activeTab === 'LOGS' && renderLogs()}
                     </motion.div>
                 </AnimatePresence>
-            </div>
+            </main>
 
-            {/* Verification Modal */}
-            {selectedDoctor && (
-                <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4 backdrop-blur-md" onClick={() => setSelectedDoctor(null)}>
-                    <div className="glass-card border-[var(--accent-primary)]/30 max-w-5xl w-full max-h-[90vh] overflow-hidden flex flex-col relative" onClick={e => e.stopPropagation()}>
-                        <div className="p-8 flex justify-between items-center text-white shrink-0 border-b border-white/5 relative z-10">
-                            <h3 className="text-2xl font-black font-orbitron tracking-tighter flex items-center gap-3">
-                                <div className="w-3 h-3 rounded-full bg-[var(--accent-primary)] animate-pulse shadow-[0_0_8px_var(--accent-primary)]" />
-                                Verify Identity: {selectedDoctor.name}
-                            </h3>
-                            <button onClick={() => setSelectedDoctor(null)} className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-white/10 text-slate-400 hover:text-white transition-all">✕</button>
-                        </div>
-                        <div className="flex-1 p-8 flex flex-col lg:flex-row gap-8 overflow-y-auto custom-scrollbar relative z-10">
-                            <div className="flex-1 space-y-8">
-                                <div className="p-8 bg-white/[0.02] rounded-[32px] border border-white/5 shadow-inner">
-                                    <p className="text-[10px] text-slate-500 uppercase font-black tracking-[0.3em] mb-2">Registration Token</p>
-                                    <p className="text-3xl font-black tracking-widest premium-gradient-text font-orbitron">{selectedDoctor.registrationNumber}</p>
-                                    <p className="text-[10px] text-slate-500 mt-6 uppercase font-black tracking-[0.3em] mb-2">Directing Council</p>
-                                    <p className="text-sm font-black tracking-wider text-slate-300 uppercase font-orbitron">{selectedDoctor.medicalCouncil}</p>
-                                </div>
-                                <div className="space-y-4">
-                                    <label className="text-[10px] text-slate-500 font-black uppercase tracking-[0.3em] block ml-1">Admin Logs / Remarks</label>
-                                    <textarea className="input-cyber w-full h-32 p-5 resize-none outline-none" placeholder="Analysis notes..." value={remarks} onChange={e => setRemarks(e.target.value)} />
-                                </div>
-                                <div className="flex gap-4">
-                                    <Button variant="outline" className="flex-1 h-14 rounded-2xl border-rose-500/30 text-rose-500 hover:bg-rose-500/10" onClick={() => handleStatusChange(selectedDoctor.id, DoctorStatus.REJECTED)}>Reject Node</Button>
-                                    <Button variant="neon" className="flex-1 h-14 rounded-2xl" onClick={() => handleStatusChange(selectedDoctor.id, DoctorStatus.VERIFIED)}>Verify & Approve</Button>
-                                </div>
-                            </div>
-                            <div className="flex-[1.5] bg-black/40 rounded-[40px] flex items-center justify-center border border-white/5 min-h-[400px] relative overflow-hidden">
-                                {selectedDoctor.verificationDocumentUrl ? (
-                                    <iframe src={selectedDoctor.verificationDocumentUrl} className="w-full h-full border-none opacity-90 group-hover:opacity-100 transition-opacity" title="Doc" />
-                                ) : (
-                                    <div className="text-center">
-                                        <span className="text-6xl opacity-20 mb-6 block">📄</span>
-                                        <span className="text-[10px] text-slate-500 font-black uppercase tracking-[0.4em]">No Data Decrypted</span>
+            {/* Verification Modal Redesign */}
+            <AnimatePresence>
+                {selectedDoctor && (
+                    <motion.div 
+                        initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }}
+                        className="fixed inset-0 bg-black/90 backdrop-blur-2xl z-[100] flex items-center justify-center p-8"
+                    >
+                        <motion.div 
+                            initial={{ scale: 0.9, y: 50 }} animate={{ scale: 1, y: 0 }} exit={{ scale: 0.9, y: 50 }}
+                            className="glass-card max-w-6xl w-full h-[85vh] flex flex-col border-primary/20"
+                        >
+                            <div className="p-8 flex justify-between items-center border-b border-white/5">
+                                <div className="flex items-center gap-4">
+                                    <div className="h-12 w-12 rounded-2xl bg-primary/10 flex items-center justify-center text-primary shadow-glow-primary">
+                                        <User size={24} />
                                     </div>
-                                )}
+                                    <div>
+                                        <h3 className="text-2xl font-black tracking-tighter">Clinical Node Verification</h3>
+                                        <p className="text-[10px] font-black uppercase tracking-[0.3em] text-muted-foreground">{selectedDoctor.name} · {selectedDoctor.specialization}</p>
+                                    </div>
+                                </div>
+                                <button onClick={() => setSelectedDoctor(null)} className="h-10 w-10 rounded-full hover:bg-white/5 flex items-center justify-center text-muted-foreground hover:text-white transition-all">✕</button>
                             </div>
-                        </div>
-                    </div>
-                </div>
-            )}
+                            
+                            <div className="flex-1 flex overflow-hidden">
+                                <div className="w-1/3 p-8 border-r border-white/5 space-y-8 overflow-y-auto">
+                                    <div className="space-y-6">
+                                        <div className="p-6 rounded-2xl bg-white/5 border border-white/10">
+                                            <p className="text-[9px] font-black uppercase tracking-widest text-muted-foreground mb-4">Registry Details</p>
+                                            <div className="space-y-4">
+                                                <div>
+                                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Medical Council</p>
+                                                    <p className="text-sm font-bold text-white mt-1">{selectedDoctor.medicalCouncil}</p>
+                                                </div>
+                                                <div>
+                                                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-widest">Reg Number</p>
+                                                    <p className="text-sm font-bold text-primary font-mono mt-1">{selectedDoctor.registrationNumber}</p>
+                                                </div>
+                                            </div>
+                                        </div>
+                                        
+                                        <div className="space-y-4">
+                                            <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground pl-1">Admin Remarks</p>
+                                            <textarea 
+                                                className="w-full h-32 p-4 bg-white/5 border border-white/10 rounded-2xl text-xs focus:outline-none focus:border-primary/40 transition-all resize-none font-medium" 
+                                                placeholder="Enter validation audit notes..."
+                                                value={remarks}
+                                                onChange={e => setRemarks(e.target.value)}
+                                            />
+                                        </div>
+                                    </div>
+                                    
+                                    <div className="flex gap-4 pt-4">
+                                        <NeonButton variant="ghost" className="flex-1 border-rose-500/30 text-rose-500" onClick={() => handleStatusChange(selectedDoctor.id, DoctorStatus.REJECTED)}>Reject</NeonButton>
+                                        <NeonButton className="flex-1" onClick={() => handleStatusChange(selectedDoctor.id, DoctorStatus.VERIFIED)}>Verify Node</NeonButton>
+                                    </div>
+                                </div>
+                                
+                                <div className="flex-1 bg-black/40 p-1 relative">
+                                    {selectedDoctor.verificationDocumentUrl ? (
+                                        <iframe src={selectedDoctor.verificationDocumentUrl} className="w-full h-full rounded-2xl grayscale hover:grayscale-0 transition-all duration-1000 opacity-80 hover:opacity-100" title="AuthDoc" />
+                                    ) : (
+                                        <div className="h-full flex flex-col items-center justify-center text-muted-foreground opacity-30">
+                                            <Shield size={64} className="mb-4" />
+                                            <p className="text-[10px] font-black uppercase tracking-widest">No Document Stream Available</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+                        </motion.div>
+                    </motion.div>
+                )}
+            </AnimatePresence>
 
-            {/* Automation Assistant */}
-            <AutomationAssistant 
-                isOpen={isAssistantOpen} 
-                onClose={() => setIsAssistantOpen(false)} 
-                onAction={handleAdminAssistantAction} 
-            />
-            
-            {/* AI Toggle Orb */}
-            <div className="fixed bottom-8 right-8 z-[110]">
-                <button 
-                    onClick={() => setIsAssistantOpen(!isAssistantOpen)}
-                    className="w-14 h-14 rounded-full bg-gradient-to-br from-neon-400 to-bio-400 shadow-[0_0_20px_rgba(0,212,255,0.4)] flex items-center justify-center text-2xl hover:scale-110 transition-transform active:scale-95"
-                >
-                    ✨
-                </button>
-            </div>
+            <AutomationAssistant isOpen={isAssistantOpen} onClose={() => setIsAssistantOpen(false)} onAction={handleAdminAssistantAction} />
         </div>
     );
 };

@@ -7,7 +7,6 @@ import {
 import { NeonButton } from "@/components/carex/NeonButton";
 import { GlassCard } from "@/components/carex/GlassCard";
 import { ParticleField } from "@/components/carex/ParticleField";
-import { AIOrb } from "@/components/carex/AIOrb";
 import { AnimatedCounter } from "@/components/carex/AnimatedCounter";
 
 const features = [
@@ -136,9 +135,56 @@ const Landing = () => {
                   ))}
                 </div>
               </GlassCard>
-              <AIOrb className="absolute -top-6 -right-6 hidden md:flex" size={72} />
             </div>
           </motion.div>
+        </div>
+      </section>
+
+      {/* Portal Selection */}
+      <section className="py-24 px-4 bg-gradient-to-b from-transparent to-primary/5">
+        <div className="container mx-auto max-w-6xl">
+          <div className="text-center mb-16">
+            <h2 className="font-display text-4xl font-bold mb-4">Choose Your Portal</h2>
+            <p className="text-muted-foreground">Select your entry point to access tailored clinical tools and insights.</p>
+          </div>
+          <div className="grid md:grid-cols-3 gap-8">
+            {[
+              { 
+                role: "Patient", 
+                path: "/login/patient", 
+                icon: Heart, 
+                color: "text-primary", 
+                desc: "Track your vitals, view AI risk insights, and consult with your care team." 
+              },
+              { 
+                role: "Doctor", 
+                path: "/login/doctor", 
+                icon: Stethoscope, 
+                color: "text-secondary", 
+                desc: "Manage your panels, analyze clinical trends, and conduct HD video consults." 
+              },
+              { 
+                role: "Admin", 
+                path: "/login/admin", 
+                icon: Shield, 
+                color: "text-success", 
+                desc: "System oversight, clinician verification, and platform-wide analytics." 
+              }
+            ].map((p) => (
+              <Link key={p.role} to={p.path}>
+                <GlassCard className="h-full group hover:border-primary/50 transition-all">
+                  <div className={`h-14 w-14 rounded-2xl bg-background border flex items-center justify-center mb-6 group-hover:scale-110 transition-transform ${p.color}`}>
+                    <p.icon className="h-7 w-7" />
+                  </div>
+                  <h3 className="font-display text-2xl font-bold mb-3">{p.role} Portal</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed mb-6">{p.desc}</p>
+                  <div className="flex items-center gap-2 text-sm font-bold text-primary group-hover:gap-3 transition-all">
+                    Access Portal <ArrowRight className="h-4 w-4" />
+                  </div>
+                </GlassCard>
+              </Link>
+            ))}
+          </div>
         </div>
       </section>
 

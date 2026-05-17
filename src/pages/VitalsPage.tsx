@@ -1,7 +1,7 @@
 import React from 'react';
 import { HealthMetrics } from '../types';
 import { Card, CardHeader, CardTitle, CardContent } from '../components/ui/Card';
-import { useHealth } from '../services/HealthContext';
+import { useHealth } from '@/services/HealthContext';
 import { Activity, Heart, Thermometer, Droplets } from 'lucide-react';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 

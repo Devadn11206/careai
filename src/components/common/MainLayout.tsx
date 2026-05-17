@@ -10,10 +10,12 @@ import {
   LogOut, 
   Menu, 
   X,
-  Stethoscope
+  Stethoscope,
+  Bot
 } from 'lucide-react';
-import { useHealth } from '../../services/HealthContext';
+import { useHealth } from '@/services/HealthContext';
 import { Button } from '../ui/Button';
+import { GlobalNotifications } from '../features/GlobalNotifications';
 
 interface SidebarItemProps {
   icon: React.ElementType;
@@ -59,8 +61,10 @@ export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }
 
   const patientItems = [
     { icon: LayoutDashboard, label: 'Dashboard', to: '/dashboard' },
+    { icon: Stethoscope, label: 'Consult Doctors', to: '/doctors' },
     { icon: Activity, label: 'Vitals', to: '/vitals' },
     { icon: LineChart, label: 'Insights', to: '/insights' },
+    { icon: Bot, label: 'AI Assistant', to: '/ai-assistant' },
     { icon: Bell, label: 'Alerts', to: '/alerts' },
   ];
 
@@ -75,6 +79,7 @@ export const MainLayout: React.FC<{ children: React.ReactNode }> = ({ children }
 
   return (
     <div className="min-h-screen bg-bg-deep text-text-main flex overflow-hidden">
+      <GlobalNotifications />
       {/* Grid Overlay */}
       <div className="fixed inset-0 bg-grid pointer-events-none opacity-20" />
 

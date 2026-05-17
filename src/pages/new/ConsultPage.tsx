@@ -6,11 +6,13 @@ import { BackendAPI } from '@/services/apiClient';
 import { Appointment, UserRole } from '@/types';
 import { Loader2, VideoOff } from 'lucide-react';
 import { GlassCard } from '@/components/carex/GlassCard';
+import { useNavigate } from 'react-router-dom';
 
 const ConsultPage = () => {
   const { user } = useHealth();
   const [activeAppointment, setActiveAppointment] = useState<Appointment | null>(null);
   const [loading, setLoading] = useState(true);
+  const navigate = useNavigate();
 
   useEffect(() => {
     const loadConsultation = async () => {
@@ -24,13 +26,7 @@ const ConsultPage = () => {
           a.consultationType === 'VIDEO'
         );
         
-        // Fallback to most recent if none today (for demo purposes)
-        if (!active) {
-          const sorted = appts.sort((a, b) => new Date(b.date).getTime() - new Date(a.date).getTime());
-          setActiveAppointment(sorted[0] || null);
-        } else {
-          setActiveAppointment(active);
-        }
+        setActiveAppointment(active || null);
       } catch (err) {
         console.error("Failed to load appointments for consultation", err);
       } finally {
@@ -50,7 +46,9 @@ const ConsultPage = () => {
             appointmentId={activeAppointment.id}
             otherUserName={user?.role === UserRole.DOCTOR ? activeAppointment.patientName : activeAppointment.doctorName}
             currentUserRole={user?.role || UserRole.PATIENT}
-            onClose={() => window.location.href = '/dashboard'}
+            onClose={async () => {
+              navigate('/dashboard');
+            }}
           />
         ) : (
           <GlassCard className="p-12 text-center max-w-md border-dashed">

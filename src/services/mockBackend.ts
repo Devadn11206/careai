@@ -228,6 +228,7 @@ const evaluateHealthRisk = (patient: PatientProfile, metrics: HealthMetrics, ale
                 patientId: patient.id,
                 patientName: patient.name,
                 doctorId: patient.assignedDoctorId,
+                type: 'BIO_RISK',
                 riskScore: score,
                 severity,
                 message: `Patient ${patient.name} detected with high risk vitals.`,
@@ -1183,3 +1184,32 @@ export const MockBackend = {
       return log.filter(sms => sms.patientId === patientId);
   }
 };
+// Initialize Real-time Simulation Loop
+if (typeof window !== 'undefined') {
+  setInterval(() => {
+    MockBackend.simulatePatientVitals();
+    // Occasionally generate an alert
+    if (Math.random() > 0.8) {
+      const patients = getStored<PatientProfile[]>(KEYS.PATIENTS, []);
+      if (patients.length > 0) {
+        const p = patients[Math.floor(Math.random() * patients.length)];
+        const alerts = getStored<RiskAlert[]>(KEYS.ALERTS, []);
+        const newAlert: RiskAlert = {
+          id: Math.random().toString(36).substring(7),
+          patientId: p.id,
+          patientName: p.name,
+          doctorId: p.assignedDoctorId || 'd1',
+          type: 'BIO_RISK',
+          riskScore: 70 + Math.floor(Math.random() * 30),
+          severity: AlertSeverity.HIGH,
+          message: `Live telemetry alert for ${p.name}: Heart rate variability fluctuation detected.`,
+          keyFactors: [],
+          timestamp: new Date().toISOString(),
+          status: AlertStatus.NEW
+        };
+        alerts.unshift(newAlert);
+        setStored(KEYS.ALERTS, alerts);
+      }
+    }
+  }, 30000); 
+}

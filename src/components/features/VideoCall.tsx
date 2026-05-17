@@ -1,4 +1,5 @@
 import React, { useEffect, useMemo, useRef, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import AgoraRTC, { IAgoraRTCClient, ILocalAudioTrack, ILocalVideoTrack } from 'agora-rtc-sdk-ng';
 import { NeonButton as Button } from '@/components/carex/NeonButton';
 import { BackendAPI } from '@/services/apiClient';
@@ -23,6 +24,7 @@ type BrowserSpeechRecognition = {
 };
 
 export const VideoCall: React.FC<VideoCallProps> = ({ appointmentId, otherUserName, currentUserRole, onClose }) => {
+  const navigate = useNavigate();
   const appId = (import.meta as any).env?.VITE_AGORA_APP_ID as string | undefined;
   const channelName = useMemo(() => `carexai-${appointmentId}`.replace(/[^a-zA-Z0-9_-]/g, '-'), [appointmentId]);
   const localVideoRef = useRef<HTMLDivElement | null>(null);
@@ -112,6 +114,32 @@ export const VideoCall: React.FC<VideoCallProps> = ({ appointmentId, otherUserNa
     }
   };
 
+  const handleEndCall = async () => {
+    try {
+      setStatus('Ending consultation and saving records...');
+      
+      // Stop all local tracks immediately
+      if (localTracksRef.current) {
+        localTracksRef.current[0].stop();
+        localTracksRef.current[0].close();
+        localTracksRef.current[1].stop();
+        localTracksRef.current[1].close();
+        localTracksRef.current = null;
+      }
+
+      // Requirement 11: Secure End Call (Fixes Issue 1)
+      await BackendAPI.endCall(appointmentId);
+
+      // Redirect to dashboard (Issue 1)
+      navigate('/dashboard');
+      onClose();
+    } catch (err) {
+      console.error("Failed to complete appointment:", err);
+      navigate('/dashboard');
+      onClose();
+    }
+  };
+
   const handleGenerateSummary = async () => {
     if (!isDoctor) return;
     const finalTranscript = `${transcript} ${interimTranscript}`.trim();
@@ -183,9 +211,17 @@ export const VideoCall: React.FC<VideoCallProps> = ({ appointmentId, otherUserNa
       }
 
       try {
+        setStatus('Validating consultation access...');
+        // Requirement 10: Secure room access & validation (Issue 2)
+        const validation = await BackendAPI.validateCall(appointmentId);
+        if (!validation.allowed) {
+          setError(validation.message || 'You must book an appointment before starting a consultation.');
+          return;
+        }
+
         setStatus('Requesting secure access token...');
         const uid = Math.floor(Math.random() * 1_000_000_000);
-        const { token } = await BackendAPI.getAgoraToken({ channelName, uid });
+        const { token } = await BackendAPI.getAgoraToken({ channelName, uid, appointmentId });
 
         if (disposed) return;
 
@@ -267,7 +303,7 @@ export const VideoCall: React.FC<VideoCallProps> = ({ appointmentId, otherUserNa
             <h2 className="text-lg font-bold">Video Consultation</h2>
             <p className="text-xs text-slate-400">Appointment: {appointmentId}</p>
           </div>
-          <Button variant="outline" onClick={onClose}>Close</Button>
+          <Button variant="outline" onClick={handleEndCall}>Exit</Button>
         </div>
 
         <div className="p-6 space-y-4">
@@ -346,7 +382,7 @@ export const VideoCall: React.FC<VideoCallProps> = ({ appointmentId, otherUserNa
               >
                 {isLowBandwidthMode ? '⚡ Low Bandwidth: ON' : '📶 Low Bandwidth: OFF'}
               </Button>
-              <Button variant="secondary" onClick={onClose} className="bg-red-500/10 text-red-400 hover:bg-red-500/20 border-red-500/30">End Call</Button>
+              <Button variant="secondary" onClick={handleEndCall} className="bg-red-500/10 text-red-400 hover:bg-red-500/20 border-red-500/30">End Call</Button>
             </div>
           </div>
         </div>

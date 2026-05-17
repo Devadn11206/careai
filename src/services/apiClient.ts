@@ -11,8 +11,13 @@ import {
   PresenceUpdate,
   TimeSlot,
   TypingEvent,
+  User,
   UserRole,
+  Hospital,
+  HealthcareFacility,
+  BackendDoctor,
 } from '../types';
+export type { BackendDoctor } from '../types';
 
 const API_BASE = (import.meta as any).env.VITE_API_BASE_URL || 'http://localhost:4000';
 // Warn if a production build accidentally points to localhost
@@ -114,24 +119,6 @@ export interface QueueUpdate {
   status: Appointment['status'];
 }
 
-export interface BackendDoctor {
-  id: string;
-  name: string;
-  email: string;
-  role: UserRole;
-  specialization?: string;
-  experienceYears?: number;
-  qualification?: string;
-  registrationNumber?: string;
-  medicalCouncil?: string;
-  verificationDocumentUrl?: string;
-  verificationDocumentName?: string;
-  rating?: number;
-  status?: DoctorStatus;
-  hasSchedule?: boolean;
-  totalSlots?: number;
-  openSlots?: number;
-}
 
 export interface AppointmentAutoSharePayload {
   currentVitals?: {
@@ -233,6 +220,10 @@ export const BackendAPI = {
     experienceYears?: number;
     verificationDocumentUrl?: string;
     verificationDocumentName?: string;
+    hospital?: string;
+    consultationFee?: number;
+    phone?: string;
+    address?: string;
   }): Promise<LoginResponse> {
     const result = await api<LoginResponse>('/auth/register', {
       method: 'POST',
@@ -268,8 +259,73 @@ export const BackendAPI = {
     });
   },
 
-  async getDoctors(): Promise<BackendDoctor[]> {
-    return api<BackendDoctor[]>('/doctors', { method: 'GET' });
+  async updateProfile(data: Partial<User>): Promise<User> {
+    return api<User>('/auth/profile', {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async changePassword(data: any): Promise<{ message: string }> {
+    return api<{ message: string }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async getLatestAiInsights(): Promise<any> {
+    return api<any>('/api/ai-insights/latest', { method: 'GET' });
+  },
+
+  async getAiInsightsHistory(): Promise<any[]> {
+    return api<any[]>('/api/ai-insights/history', { method: 'GET' });
+  },
+
+  async getMedicationAdherence(range: string = '7days'): Promise<any[]> {
+    return api<any[]>(`/api/medication/adherence?range=${range}`, { method: 'GET' });
+  },
+
+  async downloadReport(range: string = '7days'): Promise<Blob> {
+    const token = getToken();
+    const res = await fetch(`${API_BASE}/api/report/generate?range=${range}`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to generate report');
+    return res.blob();
+  },
+
+  async askAi(message: string, context: any): Promise<{ reply: string; timestamp: string }> {
+    return api<{ reply: string; timestamp: string }>('/api/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message, patient_context: context })
+    });
+  },
+
+  async aiCommand(text?: string, audioBlob?: Blob, history?: any[]): Promise<any> {
+    const token = getToken();
+    const formData = new FormData();
+    if (audioBlob) formData.append('audio', audioBlob, 'audio.webm');
+    if (text) formData.append('text', text);
+    if (history) formData.append('history', JSON.stringify(history));
+
+    const res = await fetch(`${API_BASE}/ai/command`, {
+      method: 'POST',
+      headers: {
+        ...(token ? { 'Authorization': `Bearer ${token}` } : {})
+      },
+      body: formData
+    });
+
+    if (!res.ok) throw new Error('Failed to process AI command');
+    return res.json();
+  },
+
+  async getDoctors(params: { search?: string, specialization?: string } = {}): Promise<BackendDoctor[]> {
+    const query = new URLSearchParams();
+    if (params.search) query.append('search', params.search);
+    if (params.specialization && params.specialization !== 'All') query.append('specialization', params.specialization);
+    const path = `/doctors${query.toString() ? `?${query.toString()}` : ''}`;
+    return api<BackendDoctor[]>(path, { method: 'GET' });
   },
 
   async updateDoctorStatus(input: { doctorId: string; status: DoctorStatus }): Promise<BackendDoctor> {
@@ -295,6 +351,10 @@ export const BackendAPI = {
 
   async getAppointments(): Promise<Appointment[]> {
     return api<Appointment[]>('/appointments', { method: 'GET' });
+  },
+  
+  async getPatientAppointments(): Promise<any[]> {
+    return api<any[]>('/api/appointments/patient', { method: 'GET' });
   },
 
   async createAppointment(input: {
@@ -329,26 +389,202 @@ export const BackendAPI = {
     });
   },
 
-  async getDoctorSlots(doctorId: string, date: string): Promise<TimeSlot[]> {
-    const params = new URLSearchParams({ date });
-    return api<TimeSlot[]>(`/doctors/${doctorId}/slots?${params.toString()}`, { method: 'GET' });
+  async cancelAppointment(appointmentId: string): Promise<{ success: boolean; message: string }> {
+    return api<{ success: boolean; message: string }>(`/api/appointments/cancel/${appointmentId}`, {
+      method: 'POST',
+    });
+  },
+
+  async getDoctorSlots(doctorId: string, date: string): Promise<any[]> {
+    const path = doctorId ? `/api/doctors/${doctorId}/slots?date=${date}` : `/api/doctor/slots?date=${date}`;
+    return api<any[]>(path, { method: 'GET' });
   },
 
   async updateDoctorSchedule(input: {
-    schedule: any[];
+    scheduleJson: string;
     slotDuration: number;
     maxPatients: number;
-  }): Promise<{ doctorId: string; schedule: any[]; slotDuration: number; maxPatients: number }> {
-    return api('/doctor/schedule', {
+  }): Promise<any> {
+    return api('/api/doctor/schedule', {
       method: 'PATCH',
       body: JSON.stringify(input),
     });
   },
 
-  async toggleSlotBlock(slotId: string, blocked: boolean) {
-    return api(`/slots/${slotId}/block`, {
-      method: 'PATCH',
-      body: JSON.stringify({ blocked }),
+  async blockDoctorSlot(slotId: string, isBlocked: boolean): Promise<any> {
+    return api('/api/doctor/slots/block', {
+      method: 'POST',
+      body: JSON.stringify({ slotId, isBlocked }),
+    });
+  },
+
+  async getDoctorActivePatients(): Promise<{ count: number }> {
+    return api<{ count: number }>('/api/doctor/active-patients', { method: 'GET' });
+  },
+
+  async getDoctorCriticalAlerts(): Promise<{ count: number; alerts: any[] }> {
+    return api<{ count: number; alerts: any[] }>('/api/doctor/critical-alerts', { method: 'GET' });
+  },
+
+  async getDoctorAppointmentsToday(): Promise<{ count: number; appointments: any[] }> {
+    return api<{ count: number; appointments: any[] }>('/api/doctor/appointments/today', { method: 'GET' });
+  },
+
+  async getDoctorPendingConsults(): Promise<{ count: number }> {
+    return api<{ count: number }>('/api/doctor/pending-consults', { method: 'GET' });
+  },
+
+  async getDoctorPatientRoster(): Promise<any[]> {
+    return api<any[]>('/api/doctor/patients', { method: 'GET' });
+  },
+
+  async getDoctorUpcomingSessions(): Promise<any[]> {
+    return api<any[]>('/api/doctor/upcoming-sessions', { method: 'GET' });
+  },
+
+  async sendPrescription(formData: FormData): Promise<any> {
+    const token = getToken();
+    const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:4000';
+    
+    const response = await fetch(`${API_BASE}/api/prescriptions/send`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(err.error);
+    }
+    return response.json();
+  },
+
+  async getPatientPrescriptions(): Promise<any[]> {
+    return api<any[]>('/api/prescriptions/patient', { method: 'GET' });
+  },
+
+  async getDoctorPrescriptions(): Promise<any[]> {
+    return api<any[]>('/api/prescriptions/doctor', { method: 'GET' });
+  },
+
+  async getMedicalRecords(): Promise<any[]> {
+    return api<any[]>('/api/records', { method: 'GET' });
+  },
+
+  async uploadMedicalRecord(formData: FormData): Promise<any> {
+    const token = getToken();
+    const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:4000';
+    
+    const response = await fetch(`${API_BASE}/api/records/upload`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`
+      },
+      body: formData
+    });
+
+    if (!response.ok) {
+      const err = await response.json().catch(() => ({ error: 'Upload failed' }));
+      throw new Error(err.error);
+    }
+    return response.json();
+  },
+
+  async requestRecordAccess(patientId: string): Promise<any> {
+    return api('/api/records/request-access', {
+      method: 'POST',
+      body: JSON.stringify({ patientId })
+    });
+  },
+
+  async grantRecordAccess(input: { 
+    doctorId: string; 
+    status: 'GRANTED' | 'REVOKED'; 
+    accessType?: string; 
+    durationDays?: number 
+  }): Promise<any> {
+    return api('/api/records/grant-access', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  },
+
+  async getPatientRecordsByDoctor(patientId: string): Promise<any[]> {
+    return api<any[]>(`/api/medical-records/${patientId}`, { method: 'GET' });
+  },
+
+  async getMedicalRecordPreview(id: string): Promise<Blob> {
+    const token = getToken();
+    const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:4000';
+    const res = await fetch(`${API_BASE}/api/records/${id}/preview`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to fetch preview');
+    return res.blob();
+  },
+
+  async downloadMedicalRecord(id: string): Promise<Blob> {
+    const token = getToken();
+    const API_BASE = (import.meta as any).env?.VITE_API_BASE_URL || 'http://localhost:4000';
+    const res = await fetch(`${API_BASE}/api/records/${id}/download`, {
+      headers: { 'Authorization': `Bearer ${token}` }
+    });
+    if (!res.ok) throw new Error('Failed to download record');
+    return res.blob();
+  },
+
+  async createDoctorSlots(input: {
+    date: string;
+    startTime: string;
+    endTime: string;
+    durationMinutes: number;
+    maxPatientsPerSlot: number;
+  }): Promise<any> {
+    return api('/api/doctor/slots/create', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  },
+
+  async getChatRooms(): Promise<any[]> {
+    return api<any[]>('/api/chat/rooms', { method: 'GET' });
+  },
+
+  async getChatMessages(appointmentId: string): Promise<any[]> {
+    return api<any[]>(`/api/appointments/${appointmentId}/chat`, { method: 'GET' });
+  },
+
+  async sendChatMessage(input: {
+    appointmentId: string;
+    content: string;
+    messageType?: string;
+    attachmentUrl?: string;
+    attachmentName?: string;
+    attachmentType?: string;
+  }): Promise<any> {
+    const { appointmentId, ...body } = input;
+    // Note: The socket usually handles sending messages for real-time, 
+    // but this endpoint can be used for fallback or specific actions.
+    return api(`/api/appointments/${appointmentId}/chat`, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+
+  async getActiveDoctors(): Promise<any[]> {
+    return api<any[]>('/api/doctors/active', { method: 'GET' });
+  },
+
+  async bookAppointment(input: {
+    doctorId: string;
+    slotId: string;
+    reason: string;
+  }): Promise<any> {
+    return api('/api/appointments/book', {
+      method: 'POST',
+      body: JSON.stringify(input)
     });
   },
 
@@ -364,6 +600,100 @@ export const BackendAPI = {
     });
   },
 
+  async getAdminStats(): Promise<any> {
+    return api<any>('/api/admin/stats', { method: 'GET' });
+  },
+
+  async getAdminEmergency(): Promise<any> {
+    return api<any>('/api/admin/emergency', { method: 'GET' });
+  },
+
+  async getAdminAnalytics(): Promise<any> {
+    return api<any>('/api/admin/analytics', { method: 'GET' });
+  },
+
+  async getAdminDoctorsList(): Promise<any[]> {
+    return api<any[]>('/api/admin/doctors', { method: 'GET' });
+  },
+
+  async performAdminDoctorAction(id: string, action: 'VERIFY' | 'REJECT' | 'SUSPEND', reason?: string): Promise<any> {
+    return api(`/api/admin/doctors/${id}/action`, {
+      method: 'POST',
+      body: JSON.stringify({ action, reason })
+    });
+  },
+
+  async getAdminHospitals(): Promise<any[]> {
+    return api<any[]>('/api/admin/hospitals', { method: 'GET' });
+  },
+
+  async getAdminLogs(): Promise<any[]> {
+    return api<any[]>('/api/admin/logs', { method: 'GET' });
+  },
+
+  async getAdminHealth(): Promise<any[]> {
+    return api<any[]>('/api/admin/health', { method: 'GET' });
+  },
+
+  async sendAiMessage(message: string): Promise<{ response: string }> {
+    return api<{ response: string }>('/api/ai/chat', {
+      method: 'POST',
+      body: JSON.stringify({ message }),
+    });
+  },
+
+  async getNearbyHospitals(lat: number, lng: number, radius?: number): Promise<Hospital[]> {
+    return api<Hospital[]>(`/api/hospitals/nearby?lat=${lat}&lng=${lng}&radius=${radius || 50}`, { method: 'GET' });
+  },
+
+  async getNearbyDoctors(lat: number, lng: number, radius?: number): Promise<BackendDoctor[]> {
+    return api<BackendDoctor[]>(`/api/doctors/nearby?lat=${lat}&lng=${lng}&radius=${radius || 50}`, { method: 'GET' });
+  },
+
+  async getNearbyFacilities(lat: number, lng: number, radius?: number, type?: string): Promise<HealthcareFacility[]> {
+    const typeQuery = type ? `&type=${type}` : '';
+    return api<HealthcareFacility[]>(`/api/facilities/nearby?lat=${lat}&lng=${lng}&radius=${radius || 20}${typeQuery}`, { method: 'GET' });
+  },
+
+  async getAICareRecommendation(params: { symptoms: string, vitals?: any, lat: number, lng: number }): Promise<{
+    recommendation: string;
+    bestHospital: Hospital;
+    department: string;
+    urgency: 'HIGH' | 'NORMAL';
+  }> {
+    return api('/api/ai/recommend-care', {
+      method: 'POST',
+      body: JSON.stringify(params)
+    });
+  },
+
+  async addHospital(data: any): Promise<Hospital> {
+    return api<Hospital>('/api/admin/hospitals', {
+      method: 'POST',
+      body: JSON.stringify(data),
+    });
+  },
+
+  async verifyDoctor(id: string, input: { status: string; reason?: string }): Promise<any> {
+    return api(`/api/admin/doctors/${id}/verify`, {
+      method: 'PATCH',
+      body: JSON.stringify(input)
+    });
+  },
+
+  async uploadDoctorDocument(input: {
+    type: string;
+    title: string;
+    fileUrl: string;
+    fileName?: string;
+    fileType?: string;
+  }): Promise<any> {
+    return api('/api/doctor/documents/upload', {
+      method: 'POST',
+      body: JSON.stringify(input)
+    });
+  },
+
   async analyzeHealthRisk(input: {
     metrics: HealthMetrics;
     age: number;
@@ -375,28 +705,11 @@ export const BackendAPI = {
     });
   },
 
-  async getChatMessages(appointmentId: string): Promise<ChatMessage[]> {
-    return api<ChatMessage[]>(`/appointments/${appointmentId}/chat`, { method: 'GET' });
-  },
-
-  async sendChatMessage(input: {
-    appointmentId: string;
-    content: string;
-    attachmentUrl?: string;
-    attachmentType?: 'image' | 'pdf' | 'video' | 'file';
-  }): Promise<ChatMessage> {
-    const { appointmentId, ...body } = input;
-    return api<ChatMessage>(`/appointments/${appointmentId}/chat`, {
-      method: 'POST',
-      body: JSON.stringify(body),
-    });
-  },
-
   async getPresence(userId: string): Promise<{ userId: string; online: boolean }> {
     return api<{ userId: string; online: boolean }>(`/presence/${encodeURIComponent(userId)}`, { method: 'GET' });
   },
 
-  async getAgoraToken(input: { channelName: string; uid: number }): Promise<{ token: string }> {
+  async getAgoraToken(input: { channelName: string; uid: number; appointmentId: string }): Promise<{ token: string }> {
     return api<{ token: string }>('/agora-token', {
       method: 'POST',
       body: JSON.stringify(input),
@@ -404,10 +717,9 @@ export const BackendAPI = {
   },
 
   async generateConsultationSummary(input: { appointmentId: string; transcript: string }): Promise<ConsultationSummary> {
-    const { appointmentId, transcript } = input;
-    return api<ConsultationSummary>(`/appointments/${appointmentId}/ai-summary`, {
+    return api<ConsultationSummary>('/consultation/summarize', {
       method: 'POST',
-      body: JSON.stringify({ transcript }),
+      body: JSON.stringify(input),
     });
   },
 
@@ -474,6 +786,15 @@ export const BackendAPI = {
     };
   },
 
+  onAppointmentConfirmed(handler: (data: any) => void): () => void {
+    const s = ensureSocket();
+    if (!s) return () => { };
+    s.on('appointment:confirmed', handler);
+    return () => {
+      s.off('appointment:confirmed', handler);
+    };
+  },
+
   onAppointmentUpdated(handler: (appt: Appointment) => void): () => void {
     const s = ensureSocket();
     if (!s) return () => { };
@@ -490,6 +811,28 @@ export const BackendAPI = {
     return () => {
       s.off('slot:updated', handler);
     };
+  },
+
+  onSlotCreated(handler: (data: any) => void): () => void {
+    const s = ensureSocket();
+    if (!s) return () => { };
+    s.on('slot:created', handler);
+    return () => {
+      s.off('slot:created', handler);
+    };
+  },
+
+  async endCall(appointmentId: string): Promise<{ success: boolean; appointment: Appointment }> {
+    return api<{ success: boolean; appointment: Appointment }>(`/api/appointments/end-call/${appointmentId}`, {
+      method: 'POST',
+    });
+  },
+
+  async validateCall(appointmentId: string): Promise<{ allowed: boolean; message?: string; roomId?: string }> {
+    const params = new URLSearchParams({ appointmentId });
+    return api<{ allowed: boolean; message?: string; roomId?: string }>(`/api/appointments/validate-call?${params.toString()}`, {
+      method: 'GET',
+    });
   },
 
   onChatMessage(handler: (msg: ChatMessage) => void): () => void {
@@ -537,6 +880,23 @@ export const BackendAPI = {
     };
   },
 
+  onAppointmentReminder(handler: (payload: { 
+    appointmentId: string; 
+    title: string; 
+    message: string; 
+    doctorName: string; 
+    patientName: string; 
+    startTime: string; 
+    type: string 
+  }) => void): () => void {
+    const s = ensureSocket();
+    if (!s) return () => { };
+    s.on('appointment:reminder', handler);
+    return () => {
+      s.off('appointment:reminder', handler);
+    };
+  },
+
   onChatEmergency(handler: (alert: { doctorId: string; messageId: string; keywords: string[] }) => void): () => void {
     const s = ensureSocket();
     if (!s) return () => { };
@@ -545,4 +905,28 @@ export const BackendAPI = {
       s.off('chat:emergency', handler as any);
     };
   },
+  async getPatientHistory(): Promise<any[]> {
+    return api<any[]>('/api/appointments/patient/history');
+  },
+
+  async get(path: string): Promise<any> {
+    return api<any>(path, { method: 'GET' });
+  },
+
+  async post(path: string, body: any): Promise<any> {
+    return api<any>(path, {
+      method: 'POST',
+      body: JSON.stringify(body)
+    });
+  },
+
+  onEmergencyAlert(handler: (data: { alert: RiskAlert }) => void): () => void {
+    const s = ensureSocket();
+    if (!s) return () => { };
+    s.on('emergency:alert', handler);
+    return () => {
+      s.off('emergency:alert', handler);
+    };
+  }
 };
+

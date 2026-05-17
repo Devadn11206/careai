@@ -1,7 +1,7 @@
 import React, { Suspense, lazy, useEffect, useState } from 'react';
 import { BrowserRouter, Routes, Route, Navigate, useLocation, useNavigate } from 'react-router-dom';
 import { User, UserRole, PatientProfile, DoctorProfile } from './types';
-import { HealthProvider, useHealth } from './services/HealthContext';
+import { HealthProvider, useHealth } from '@/services/HealthContext';
 import { MainLayout } from './components/common/MainLayout';
 import { MockBackend } from './services/mockBackend';
 import { BackendAPI, setToken, getToken } from './services/apiClient';
@@ -17,15 +17,22 @@ const Login = Auth;
 const SymptomScreening = lazy(() => import('./components/features/SymptomScreening').then((m) => ({ default: m.SymptomScreening })));
 const PatientDashboard = lazy(() => import('./pages/new/PatientDashboard'));
 const DoctorDashboard = lazy(() => import('./pages/new/DoctorDashboard'));
-const AdminDashboard = lazy(() => import('./pages/AdminDashboard').then((m) => ({ default: m.AdminDashboard })));
+const AdminDashboard = lazy(() => import('./pages/new/AdminDashboard'));
 
 // New pages
 const VitalsPage = lazy(() => import('./pages/new/Vitals'));
 const InsightsPage = lazy(() => import('./pages/new/Insights'));
 const AlertsPage = lazy(() => import('./pages/new/Alerts'));
-const ChatPage = lazy(() => import('./pages/new/ChatPage'));
+const Profile = lazy(() => import('./pages/new/Profile'));
+const ChatPage = lazy(() => import('./pages/new/Chat'));
 const ConsultPage = lazy(() => import('./pages/new/ConsultPage'));
 const PassportPage = lazy(() => import('./pages/new/PassportPage'));
+const FindDoctors = lazy(() => import('./pages/new/FindDoctors'));
+const PrescriptionOCR = lazy(() => import('./components/features/PrescriptionOCR').then(m => ({ default: m.PrescriptionOCR })));
+const PatientAuth = lazy(() => import('./pages/new/PatientAuth'));
+const DoctorAuth = lazy(() => import('./pages/new/DoctorAuth'));
+const AdminAuth = lazy(() => import('./pages/new/AdminAuth'));
+const AiAssistantPage = lazy(() => import('./pages/new/AiAssistantPage'));
 
 const ProtectedRoute: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const { user, isLoading } = useHealth();
@@ -89,6 +96,9 @@ function AppContent() {
           {/* Public Routes */}
           <Route path="/" element={<LandingPage />} />
           <Route path="/login" element={<Login />} />
+          <Route path="/login/patient" element={<PatientAuth />} />
+          <Route path="/login/doctor" element={<DoctorAuth />} />
+          <Route path="/login/admin" element={<AdminAuth />} />
 
           {/* Protected App Routes */}
           <Route path="/dashboard" element={
@@ -103,12 +113,16 @@ function AppContent() {
             </ProtectedRoute>
           } />
 
+          <Route path="/profile" element={<ProtectedRoute><Profile /></ProtectedRoute>} />
           <Route path="/vitals" element={<ProtectedRoute><VitalsPage /></ProtectedRoute>} />
           <Route path="/insights" element={<ProtectedRoute><InsightsPage /></ProtectedRoute>} />
           <Route path="/alerts" element={<ProtectedRoute><AlertsPage /></ProtectedRoute>} />
           <Route path="/chat" element={<ProtectedRoute><ChatPage /></ProtectedRoute>} />
           <Route path="/consult" element={<ProtectedRoute><ConsultPage /></ProtectedRoute>} />
+          <Route path="/doctors" element={<ProtectedRoute><FindDoctors /></ProtectedRoute>} />
           <Route path="/passport" element={<ProtectedRoute><PassportPage /></ProtectedRoute>} />
+          <Route path="/prescription-ocr" element={<ProtectedRoute><PrescriptionOCR /></ProtectedRoute>} />
+          <Route path="/ai-assistant" element={<ProtectedRoute><AiAssistantPage /></ProtectedRoute>} />
 
           {/* Redirects */}
           <Route path="*" element={<Navigate to={user ? "/dashboard" : "/"} replace />} />

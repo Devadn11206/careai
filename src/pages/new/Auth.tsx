@@ -1,174 +1,107 @@
-import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { Link } from "react-router-dom";
 import { motion } from "framer-motion";
-import { Mail, Lock, User, Heart, Github, ArrowRight, Loader2 } from "lucide-react";
-import { NeonInput } from "@/components/carex/NeonInput";
-import { NeonButton } from "@/components/carex/NeonButton";
+import { Heart, Stethoscope, Shield, ArrowRight, Activity, Zap } from "lucide-react";
 import { GlassCard } from "@/components/carex/GlassCard";
 import { ParticleField } from "@/components/carex/ParticleField";
-import { AIOrb } from "@/components/carex/AIOrb";
-import { BackendAPI } from "@/services/apiClient";
-import { useHealth } from "@/services/HealthContext";
-import { UserRole } from "@/types";
-import { toast } from "sonner";
+import { cn } from "@/lib/utils";
 
-const Auth = ({ mode = "login" as "login" | "signup" }) => {
-  const [tab, setTab] = useState(mode);
-  const [isLoading, setIsLoading] = useState(false);
-  const [email, setEmail] = useState("");
-  const [password, setPassword] = useState("");
-  const [name, setName] = useState("");
-  const navigate = useNavigate();
-  const { setUser } = useHealth();
-
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setIsLoading(true);
-
-    try {
-      if (tab === "login") {
-        const res = await BackendAPI.login(email, password);
-        setUser(res.user as any);
-        toast.success(`Welcome back, ${res.user.name}`);
-        navigate("/dashboard");
-      } else {
-        const res = await BackendAPI.register({
-          name,
-          email,
-          password,
-          role: UserRole.PATIENT // Default for new users in this UI
-        });
-        setUser(res.user as any);
-        toast.success(`Account created successfully!`);
-        navigate("/dashboard");
-      }
-    } catch (err: any) {
-      toast.error(err.message || "Authentication failed");
-    } finally {
-      setIsLoading(false);
+const Auth = () => {
+  const portals = [
+    {
+      role: "Patient",
+      path: "/login/patient",
+      icon: Heart,
+      color: "text-primary",
+      glow: "shadow-primary/20",
+      desc: "Vitals & AI Health Insights"
+    },
+    {
+      role: "Doctor",
+      path: "/login/doctor",
+      icon: Stethoscope,
+      color: "text-secondary",
+      glow: "shadow-secondary/20",
+      desc: "Clinical Panels & Consults"
+    },
+    {
+      role: "Admin",
+      path: "/login/admin",
+      icon: Shield,
+      color: "text-success",
+      glow: "shadow-success/20",
+      desc: "System Command & Metrics"
     }
-  };
+  ];
 
   return (
     <div className="min-h-screen flex items-center justify-center px-4 py-12 relative overflow-hidden">
       <ParticleField count={30} />
       <div className="absolute inset-0 grid-bg opacity-30" />
 
-      {/* Floating orbs */}
-      <div className="absolute top-1/4 -left-32 w-96 h-96 bg-primary/20 rounded-full blur-[120px]" />
-      <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-secondary/20 rounded-full blur-[120px]" />
+      {/* Background orbs */}
+      <div className="absolute top-1/4 -left-32 w-96 h-96 bg-primary/10 rounded-full blur-[120px]" />
+      <div className="absolute bottom-1/4 -right-32 w-96 h-96 bg-secondary/10 rounded-full blur-[120px]" />
 
       <motion.div
-        initial={{ opacity: 0, y: 30, scale: 0.95 }}
-        animate={{ opacity: 1, y: 0, scale: 1 }}
-        transition={{ duration: 0.5 }}
-        className="relative w-full max-w-md"
+        initial={{ opacity: 0, y: 20 }}
+        animate={{ opacity: 1, y: 0 }}
+        className="relative w-full max-w-4xl"
       >
-        <Link to="/" className="flex items-center justify-center gap-2.5 mb-8">
-          <div className="h-11 w-11 rounded-xl bg-gradient-aurora shadow-glow flex items-center justify-center animate-float">
-            <Heart className="h-6 w-6 text-primary-foreground" fill="currentColor" />
-          </div>
-          <span className="font-display font-bold text-2xl">CareXAI</span>
-        </Link>
-
-        <GlassCard variant="strong" hover={false} className="p-8">
-          <div className="flex justify-center mb-8">
-            <div className="glass rounded-full p-1 flex">
-              <button
-                onClick={() => setTab("login")}
-                className={`px-6 py-1.5 rounded-full text-sm font-medium transition-all ${tab === "login" ? "bg-gradient-primary text-primary-foreground shadow-glow" : "text-muted-foreground"}`}
-              >
-                Sign In
-              </button>
-              <button
-                onClick={() => setTab("signup")}
-                className={`px-6 py-1.5 rounded-full text-sm font-medium transition-all ${tab === "signup" ? "bg-gradient-primary text-primary-foreground shadow-glow" : "text-muted-foreground"}`}
-              >
-                Sign Up
-              </button>
+        <div className="text-center mb-12">
+          <Link to="/" className="inline-flex items-center gap-3 mb-6">
+            <div className="h-12 w-12 rounded-2xl bg-gradient-aurora shadow-glow flex items-center justify-center animate-float">
+              <Heart className="h-7 w-7 text-primary-foreground" fill="currentColor" />
             </div>
-          </div>
+            <span className="font-display font-bold text-3xl">CareXAI</span>
+          </Link>
+          <h1 className="font-display text-4xl md:text-5xl font-bold tracking-tight">Select Your Portal</h1>
+          <p className="text-muted-foreground mt-4 text-lg">Choose your specific entry point to the CareXAI ecosystem.</p>
+        </div>
 
-          <motion.h1
-            key={tab}
-            initial={{ opacity: 0, x: 10 }}
-            animate={{ opacity: 1, x: 0 }}
-            className="font-display text-3xl font-bold text-center"
-          >
-            {tab === "login" ? "Welcome back" : "Create account"}
-          </motion.h1>
-          <p className="text-sm text-muted-foreground text-center mt-2 mb-8">
-            {tab === "login" ? "Sign in to access your dashboard" : "Get started with CareXAI in seconds"}
+        <div className="grid md:grid-cols-3 gap-6">
+          {portals.map((p, i) => (
+            <motion.div
+              key={p.role}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1 }}
+            >
+              <Link to={p.path} className="block group h-full">
+                <GlassCard 
+                  variant="strong" 
+                  className={cn(
+                    "h-full p-8 flex flex-col items-center text-center border-border/50 group-hover:border-primary/50 transition-all duration-500",
+                    "hover:shadow-2xl hover:-translate-y-2"
+                  )}
+                >
+                  <div className={cn(
+                    "h-20 w-20 rounded-3xl bg-background border flex items-center justify-center mb-8",
+                    "group-hover:scale-110 group-hover:rotate-3 transition-all duration-500 shadow-xl",
+                    p.color,
+                    p.glow
+                  )}>
+                    <p.icon className="h-10 w-10" />
+                  </div>
+                  
+                  <h3 className="font-display text-2xl font-bold mb-3">{p.role} Portal</h3>
+                  <p className="text-sm text-muted-foreground leading-relaxed mb-8">{p.desc}</p>
+                  
+                  <div className="mt-auto flex items-center gap-2 text-sm font-bold text-primary opacity-0 group-hover:opacity-100 transition-all transform translate-y-2 group-hover:translate-y-0">
+                    Authorize Access <ArrowRight className="h-4 w-4" />
+                  </div>
+                </GlassCard>
+              </Link>
+            </motion.div>
+          ))}
+        </div>
+
+        {/* Support link */}
+        <div className="mt-12 text-center">
+          <p className="text-sm text-muted-foreground">
+            Having trouble? <a href="#" className="text-primary hover:underline">Contact System Administrator</a>
           </p>
-
-          <form
-            onSubmit={handleSubmit}
-            className="space-y-4"
-          >
-            {tab === "signup" && (
-              <NeonInput 
-                label="Full Name" 
-                icon={<User className="h-4 w-4" />} 
-                placeholder="Dr. Jane Doe" 
-                value={name}
-                onChange={(e) => setName(e.target.value)}
-                required
-              />
-            )}
-            <NeonInput 
-              label="Email" 
-              icon={<Mail className="h-4 w-4" />} 
-              placeholder="you@hospital.com" 
-              type="email" 
-              value={email}
-              onChange={(e) => setEmail(e.target.value)}
-              required
-            />
-            <NeonInput 
-              label="Password" 
-              icon={<Lock className="h-4 w-4" />} 
-              placeholder="••••••••" 
-              type="password" 
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-
-            {tab === "login" && (
-              <div className="flex justify-end">
-                <a href="#" className="text-xs text-primary hover:text-primary-glow transition-colors">Forgot password?</a>
-              </div>
-            )}
-
-            <NeonButton type="submit" size="lg" className="w-full mt-2" disabled={isLoading}>
-              {isLoading ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
-              ) : (
-                <>
-                  {tab === "login" ? "Sign In" : "Create Account"}
-                  <ArrowRight className="h-4 w-4" />
-                </>
-              )}
-            </NeonButton>
-          </form>
-
-          <div className="my-6 flex items-center gap-4">
-            <div className="h-px flex-1 bg-border" />
-            <span className="text-xs text-muted-foreground">OR</span>
-            <div className="h-px flex-1 bg-border" />
-          </div>
-
-          <NeonButton variant="outline" size="lg" className="w-full">
-            <Github className="h-4 w-4" /> Continue with GitHub
-          </NeonButton>
-        </GlassCard>
-
-        <p className="text-center text-xs text-muted-foreground mt-6">
-          By continuing, you agree to our Terms & HIPAA-compliant Privacy Policy.
-        </p>
+        </div>
       </motion.div>
-
-      <AIOrb floating size={56} onClick={() => navigate("/chat")} />
     </div>
   );
 };

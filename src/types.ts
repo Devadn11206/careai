@@ -17,7 +17,17 @@ export interface User {
   email: string;
   role: UserRole;
   profilePicUrl?: string;
-  isBlocked?: boolean; // New field for admin control
+  phone?: string | null;
+  age?: number | null;
+  gender?: string | null;
+  specialization?: string | null;
+  experienceYears?: number | null;
+  qualification?: string | null;
+  registrationNumber?: string | null;
+  medicalCouncil?: string | null;
+  status?: DoctorStatus | null;
+  isBlocked?: boolean;
+  createdAt?: string;
 }
 
 export interface DaySchedule {
@@ -52,6 +62,9 @@ export interface DoctorProfile extends User {
   verificationDate?: string;
   status: DoctorStatus;
   bio: string;
+  about?: string;
+  hospital?: string;
+  consultationFee?: number;
   schedule?: DaySchedule[];
   slotDuration?: number;
   defaultMaxPatients?: number; // Config for OPD vs Private
@@ -164,6 +177,7 @@ export interface PrescriptionOcrResult {
   patientName?: string;
   date?: string;
   summary?: string;
+  diagnosis?: string;
 }
 
 export interface NutritionPlan {
@@ -322,20 +336,27 @@ export enum AlertSeverity {
 export enum AlertStatus {
   NEW = 'NEW',
   ACKNOWLEDGED = 'ACKNOWLEDGED',
-  RESOLVED = 'RESOLVED'
+  RESOLVED = 'RESOLVED',
+  DISMISSED = 'DISMISSED'
 }
 
 export interface RiskAlert {
   id: string;
   patientId: string;
-  patientName: string;
-  doctorId: string;
-  riskScore: number;
+  patientName?: string;
+  doctorId?: string;
+  type: string;
+  riskScore?: number;
   severity: AlertSeverity;
   message: string;
-  keyFactors: string[];
+  keyFactors?: string[];
   timestamp: string;
   status: AlertStatus;
+  patient?: {
+    id: string;
+    name: string;
+    profilePicUrl?: string | null;
+  };
 }
 
 export interface Appointment {
@@ -386,6 +407,20 @@ export interface ChatEmergencyAlert {
   keywords: string[];
 }
 
+export interface AiInsight {
+  heart_rate: number;
+  blood_pressure: string;
+  glucose: number;
+  ai_wellness_score: number;
+  recovery_score: number;
+  summary: string;
+  timestamp: string;
+  confidence: number;
+  diabetesRisk?: number;
+  hypertensionRisk?: number;
+  heartDiseaseRisk?: number;
+}
+
 export interface ConsultationSummary {
   id: string;
   appointmentId: string;
@@ -393,7 +428,11 @@ export interface ConsultationSummary {
   doctorId: string;
   transcript: string;
   symptoms: string;
+  diagnosis?: string;
   possibleCondition: string;
+  medicines?: string;
+  advice?: string;
+  followUp?: string;
   keyDiscussionPoints: string[];
   recommendations: string;
   followUpInstructions: string;
@@ -480,4 +519,65 @@ export interface ClientAction {
   type: string;
   target?: string;
   payload?: any;
+}
+
+export interface BackendDoctor {
+  id: string;
+  name: string;
+  email: string;
+  role: UserRole;
+  specialization?: string;
+  experienceYears?: number;
+  qualification?: string;
+  registrationNumber?: string;
+  medicalCouncil?: string;
+  verificationDocumentUrl?: string;
+  verificationDocumentName?: string;
+  rating?: number;
+  status?: DoctorStatus;
+  hasSchedule?: boolean;
+  totalSlots?: number;
+  openSlots?: number;
+  profilePicUrl?: string;
+  about?: string;
+  hospital?: string;
+  consultationFee?: number;
+}
+
+export interface Hospital {
+  id: string;
+  name: string;
+  type: 'GOVERNMENT' | 'PRIVATE' | 'SPECIALTY';
+  description?: string;
+  imageUrl?: string;
+  emergencyStatus: boolean;
+  rating: number;
+  departments?: string; // JSON string
+  timings?: string;
+  verified: boolean;
+  queueWaitTime: number; // Added for AI tracking
+  location?: HospitalLocation;
+  distance?: number; // Calculated on fly
+}
+
+export interface HospitalLocation {
+  id: string;
+  hospitalId: string;
+  address: string;
+  city: string;
+  state?: string;
+  country: string;
+  latitude: number;
+  longitude: number;
+}
+
+export interface HealthcareFacility {
+  id: string;
+  name: string;
+  type: 'PHARMACY' | 'LAB' | 'MRI_CENTER' | 'XRAY_CENTER';
+  address: string;
+  latitude: number;
+  longitude: number;
+  verified: boolean;
+  distance?: number;
 }

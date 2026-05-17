@@ -5,9 +5,11 @@ import { GlassCard } from './GlassCard';
 import { NeonButton } from './NeonButton';
 import { NeonInput } from './NeonInput';
 import { RiskBadge } from './RiskBadge';
-import { HealthMetrics, AIAnalysisResult, DiseasePrediction, ExtractedParameter } from '@/types';
+import { HealthMetrics, AIAnalysisResult, DiseasePrediction, ExtractedParameter, AlertSeverity } from '@/types';
 import { GeminiService } from '@/services/geminiService';
 import { BackendAPI } from '@/services/apiClient';
+import { AIWellnessScore } from './AIWellnessScore';
+import { useHealth } from "@/services/HealthContext";
 import { toast } from 'sonner';
 
 interface Props {
@@ -17,12 +19,13 @@ interface Props {
 }
 
 export const MLRiskAssessor: React.FC<Props> = ({ metrics, onUpdateMetrics, onAnalyzeComplete }) => {
+  const { user, sendAlert } = useHealth();
   const [loading, setLoading] = useState(false);
   const [isUploading, setIsUploading] = useState(false);
   const [expandedPrediction, setExpandedPrediction] = useState<string | null>(null);
   const [aiResult, setAiResult] = useState<AIAnalysisResult | null>(null);
   const fileUploadRef = useRef<HTMLInputElement>(null);
-
+  
   const handleManualUpdate = (field: keyof HealthMetrics, value: any) => {
     onUpdateMetrics({ ...metrics, [field]: value });
   };
@@ -74,6 +77,17 @@ export const MLRiskAssessor: React.FC<Props> = ({ metrics, onUpdateMetrics, onAn
       setAiResult(result);
       onAnalyzeComplete(result);
       toast.success("Risk Matrix Generated");
+
+      // REAL-TIME: If high risk detected, send alert to doctor
+      result.predictions.forEach(pred => {
+        if (pred.riskLevel === 'High' || pred.probability > 70) {
+          sendAlert({
+            type: 'ML_RISK',
+            severity: AlertSeverity.CRITICAL,
+            message: `High risk for ${pred.condition} (${pred.probability}%). Recommendation: ${pred.recommendation}`,
+          });
+        }
+      });
     } catch (err) {
       toast.error("ML Prediction Failed: Check your biometric inputs.");
     } finally {
@@ -136,37 +150,40 @@ export const MLRiskAssessor: React.FC<Props> = ({ metrics, onUpdateMetrics, onAn
               }} />
             </div>
             
-            <div className="p-3 rounded-lg bg-muted/50 border border-border text-center">
-              <span className="text-xs text-muted-foreground uppercase tracking-wider">Calculated BMI</span>
-              <p className="text-xl font-display font-bold text-primary">{metrics.bmi || '--'}</p>
+            <div className="p-3 rounded-xl bg-card/50 border border-border/50 text-center shadow-inner">
+              <span className="text-[10px] text-muted-foreground uppercase tracking-[0.2em] font-black">Calculated BMI</span>
+              <p className="text-2xl font-display font-black text-primary drop-shadow-glow-primary">{metrics.bmi || '--'}</p>
             </div>
 
-            <NeonButton variant="neon" className="w-full h-12 mt-4" onClick={runAnalysis} disabled={loading}>
-              {loading ? <Loader2 className="h-5 w-5 animate-spin mr-2" /> : <Brain className="h-5 w-5 mr-2" />}
+            <NeonButton variant="neon" className="w-full h-14 mt-4 text-[10px] font-black uppercase tracking-widest shadow-glow-primary/20" onClick={runAnalysis} disabled={loading}>
+              {loading ? <Loader2 className="h-5 w-5 animate-spin mr-3" /> : <Brain className="h-5 w-5 mr-3" />}
               Execute ML Risk Prediction
             </NeonButton>
           </div>
         </GlassCard>
 
-        {/* Right: Results Matrix */}
-        <div className="lg:col-span-2 space-y-4">
+        {/* Right: Results Matrix & Wellness Score */}
+        <div className="lg:col-span-2 space-y-6">
+          <AIWellnessScore metrics={metrics} aiResult={aiResult} />
+          
           <div className="flex items-center justify-between mb-2">
-            <h3 className="text-xs font-bold text-muted-foreground uppercase tracking-widest flex items-center gap-2">
-              <div className="w-2 h-2 rounded-full bg-primary animate-pulse" />
+            <h3 className="text-[10px] font-black text-muted-foreground uppercase tracking-[0.3em] flex items-center gap-2">
+              <div className="w-2 h-2 rounded-full bg-primary animate-pulse shadow-glow" />
               Prediction Matrix
             </h3>
             {aiResult && (
-              <span className="text-[10px] text-muted-foreground font-mono">Analysis Timestamp: {new Date(aiResult.timestamp).toLocaleTimeString()}</span>
+              <span className="text-[10px] text-muted-foreground font-mono opacity-60">Analysis Timestamp: {new Date(aiResult.timestamp).toLocaleTimeString()}</span>
             )}
           </div>
 
           {!aiResult ? (
-            <div className="h-[500px] flex flex-col items-center justify-center text-center p-8 bg-muted/20 rounded-3xl border border-dashed border-border shadow-inner">
-              <div className="w-20 h-20 bg-muted rounded-2xl flex items-center justify-center mb-6 shadow-glow-primary/20 border border-border group overflow-hidden">
-                <Brain className="h-10 w-10 text-muted-foreground group-hover:text-primary transition-colors group-hover:scale-110 duration-500" />
+            <div className="h-[520px] flex flex-col items-center justify-center text-center p-8 bg-card/20 rounded-[2.5rem] border border-dashed border-border/50 shadow-inner group overflow-hidden relative">
+              <div className="absolute inset-0 bg-gradient-to-b from-primary/5 to-transparent opacity-0 group-hover:opacity-100 transition-opacity duration-700" />
+              <div className="w-24 h-24 bg-card rounded-[2rem] flex items-center justify-center mb-8 shadow-glow-primary/10 border border-border/50 group-hover:scale-110 group-hover:rotate-6 transition-all duration-700">
+                <Brain className="h-10 w-10 text-muted-foreground/40 group-hover:text-primary transition-colors duration-500" />
               </div>
-              <h4 className="font-display text-xl font-bold mb-2">Awaiting Telemetry</h4>
-              <p className="text-sm text-muted-foreground max-w-sm leading-relaxed">
+              <h4 className="font-display text-2xl font-black mb-3 tracking-tight">Awaiting Telemetry</h4>
+              <p className="text-sm text-muted-foreground max-w-xs leading-relaxed opacity-80">
                 Upload lab results or input biometrics manually to initialize the neural risk assessment matrix.
               </p>
             </div>

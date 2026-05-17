@@ -2,10 +2,9 @@ import { ReactNode, useState } from "react";
 import { AppSidebar } from "./AppSidebar";
 import { TopBar } from "./TopBar";
 import { ParticleField } from "./ParticleField";
-import { AIOrb } from "./AIOrb";
 import { useNavigate, useLocation } from "react-router-dom";
 import { motion, AnimatePresence } from "framer-motion";
-import { AutomationAssistant } from "@/components/features/AutomationAssistant";
+import { ReminderPopup } from "../features/ReminderPopup";
 
 export const AppLayout = ({
   children,
@@ -18,7 +17,6 @@ export const AppLayout = ({
 }) => {
   const navigate = useNavigate();
   const { pathname } = useLocation();
-  const [isAssistantOpen, setIsAssistantOpen] = useState(false);
 
   return (
     <div className="min-h-screen flex w-full bg-background overflow-hidden">
@@ -40,18 +38,7 @@ export const AppLayout = ({
           </AnimatePresence>
         </main>
       </div>
-      
-      <AutomationAssistant 
-        isOpen={isAssistantOpen} 
-        onClose={() => setIsAssistantOpen(false)} 
-      />
-
-      <AIOrb 
-        floating 
-        size={64} 
-        onClick={() => setIsAssistantOpen(!isAssistantOpen)} 
-        className={isAssistantOpen ? "ring-4 ring-primary ring-offset-4 ring-offset-background" : ""}
-      />
+      <ReminderPopup />
     </div>
   );
 };
